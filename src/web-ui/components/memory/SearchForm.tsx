@@ -4,9 +4,10 @@ import { useState } from 'react'
 
 interface SearchFormProps {
   onSearch: (query: string) => void
+  placeholder?: string
 }
 
-export function SearchForm({ onSearch }: SearchFormProps) {
+export function SearchForm({ onSearch, placeholder = "Search memories by content or labels..." }: SearchFormProps) {
   const [query, setQuery] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -37,7 +38,7 @@ export function SearchForm({ onSearch }: SearchFormProps) {
           type="text"
           value={query}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.currentTarget.value)}
-          placeholder="Search memories by content or labels..."
+          placeholder={placeholder}
           className="input pl-10 pr-4"
           aria-label="Search memories"
         />

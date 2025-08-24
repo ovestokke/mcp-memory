@@ -18,8 +18,8 @@ export class MemoryApiClient {
   }
 
   async getMemories(): Promise<Memory[]> {
-    const response = await apiRequest<ApiMemoryResponse>(`${this.baseUrl}/memories`)
-    return response.memories || []
+    const response = await apiRequest<Memory[]>(`${this.baseUrl}/memories`)
+    return Array.isArray(response) ? response : []
   }
 
   async createMemory(data: MemoryFormData): Promise<void> {
@@ -41,12 +41,12 @@ export class MemoryApiClient {
       ...(namespace && namespace !== 'all' ? { namespace } : {})
     }
     
-    const response = await apiRequest<ApiSearchResponse>(`${this.baseUrl}/search`, {
+    const response = await apiRequest<Memory[]>(`${this.baseUrl}/search`, {
       method: 'POST',
       body: JSON.stringify(searchData)
     })
     
-    return response.results || []
+    return Array.isArray(response) ? response : []
   }
 }
 

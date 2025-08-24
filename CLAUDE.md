@@ -6,7 +6,7 @@ This is an MCP server that provides persistent memory storage for Claude.ai Pro 
 
 **IMPORTANT**: The comprehensive project plan and architecture is in `PROJECT_PLAN.md` - always refer to this file for implementation details, data models, and development phases.
 
-**IMPORTANT**: Keep `PROJECT_PLAN.md` up to date with the latest changes and progress.
+**IMPORTANT**: Keep `@PROJECT_PLAN.md` up to date with the latest changes and progress.
 
 ## Architecture Summary
 

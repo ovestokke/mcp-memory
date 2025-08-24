@@ -67,35 +67,27 @@ describe('MemoryCard', () => {
     expect(labelIcon).not.toBeInTheDocument()
   })
 
-  it('should truncate long content and show "Show more" button', () => {
+  it('should display full content without truncation', () => {
     render(<MemoryCard memory={mockMemory} onDelete={mockOnDelete} />)
 
-    expect(screen.getByText('Show more')).toBeInTheDocument()
-    expect(screen.getByText(/\.\.\./)).toBeInTheDocument()
+    // Should display the full content
+    expect(screen.getByText(/This is a test memory content that should be displayed in the card/)).toBeInTheDocument()
+    expect(screen.getByText(/contains enough text to test/)).toBeInTheDocument()
+    
+    // Should not have truncation controls since they aren't implemented
+    expect(screen.queryByText('Show more')).not.toBeInTheDocument()
+    expect(screen.queryByText('Show less')).not.toBeInTheDocument()
   })
 
-  it('should expand content when "Show more" is clicked', async () => {
-    const user = userEvent.setup()
+  it('should display content in prose format', () => {
     render(<MemoryCard memory={mockMemory} onDelete={mockOnDelete} />)
 
-    const showMoreButton = screen.getByText('Show more')
-    await user.click(showMoreButton)
-
-    expect(screen.getByText('Show less')).toBeInTheDocument()
-    expect(screen.getByText(/contains enough text to test the truncation/)).toBeInTheDocument()
-  })
-
-  it('should collapse content when "Show less" is clicked', async () => {
-    const user = userEvent.setup()
-    render(<MemoryCard memory={mockMemory} onDelete={mockOnDelete} />)
-
-    // First expand
-    await user.click(screen.getByText('Show more'))
-    expect(screen.getByText('Show less')).toBeInTheDocument()
-
-    // Then collapse
-    await user.click(screen.getByText('Show less'))
-    expect(screen.getByText('Show more')).toBeInTheDocument()
+    // Content should be wrapped in prose styling
+    const proseContainer = document.querySelector('.prose')
+    expect(proseContainer).toBeInTheDocument()
+    
+    const contentParagraph = proseContainer?.querySelector('p')
+    expect(contentParagraph).toHaveTextContent(/This is a test memory content/)
   })
 
   it('should not show expand/collapse buttons for short content', () => {

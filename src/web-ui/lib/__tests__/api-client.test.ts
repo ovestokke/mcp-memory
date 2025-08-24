@@ -35,7 +35,7 @@ describe('MemoryApiClient', () => {
         },
       ]
 
-      mockApiRequest.mockResolvedValueOnce({ memories: mockMemories })
+      mockApiRequest.mockResolvedValueOnce(mockMemories)
 
       const result = await client.getMemories()
 
@@ -125,7 +125,7 @@ describe('MemoryApiClient', () => {
         },
       ]
 
-      mockApiRequest.mockResolvedValueOnce({ results: mockResults })
+      mockApiRequest.mockResolvedValueOnce(mockResults)
 
       const result = await client.searchMemories('test query')
 
@@ -139,7 +139,7 @@ describe('MemoryApiClient', () => {
     it('should search memories with query and namespace', async () => {
       const mockResults: any[] = []
 
-      mockApiRequest.mockResolvedValueOnce({ results: mockResults })
+      mockApiRequest.mockResolvedValueOnce(mockResults)
 
       const result = await client.searchMemories('test query', 'work')
 

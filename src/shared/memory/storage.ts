@@ -71,14 +71,20 @@ export class MemoryStorage {
   }
 
   private async handleStoreMemory(request: Request): Promise<Response> {
+    const userId = request.headers.get('x-user-id') || 'demo-user'
+    logger.info('Storing memory for user', { userId, path: new URL(request.url).pathname })
     const data = (await request.json()) as {
-      userId: string
       content: string
-      namespace: string
-      labels: string[]
+      namespace?: string
+      labels?: string[]
     }
 
-    const memory = await this.storeMemory(data)
+    const memory = await this.storeMemory({
+      userId,
+      content: data.content,
+      namespace: data.namespace || 'default',
+      labels: data.labels || []
+    })
     return new Response(JSON.stringify(memory), {
       headers: { 'Content-Type': 'application/json' },
     })
@@ -86,7 +92,7 @@ export class MemoryStorage {
 
   private async handleSearchMemories(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const userId = url.searchParams.get('userId')!
+    const userId = request.headers.get('x-user-id') || url.searchParams.get('userId') || 'demo-user'
     const query = url.searchParams.get('query') || undefined
     const namespace = url.searchParams.get('namespace') || undefined
     const labels = url.searchParams.get('labels')?.split(',') || undefined
@@ -106,10 +112,16 @@ export class MemoryStorage {
 
   private async handleListMemories(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const userId = url.searchParams.get('userId')!
+    const userId = request.headers.get('x-user-id') || url.searchParams.get('userId') || 'demo-user'
     const namespace = url.searchParams.get('namespace') || undefined
-
+    
+    logger.info('Listing memories for user', { 
+      userId, 
+      ...(namespace && { namespace }), 
+      path: url.pathname 
+    })
     const memories = await this.listMemories(userId, namespace)
+    logger.info('Found memories', { userId, count: memories.length })
     return new Response(JSON.stringify(memories), {
       headers: { 'Content-Type': 'application/json' },
     })
@@ -117,7 +129,7 @@ export class MemoryStorage {
 
   private async handleDeleteMemory(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const userId = url.searchParams.get('userId')!
+    const userId = request.headers.get('x-user-id') || url.searchParams.get('userId') || 'demo-user'
     const memoryId = url.searchParams.get('id')!
 
     await this.deleteMemory(userId, memoryId)
@@ -134,13 +146,17 @@ export class MemoryStorage {
   }
 
   private async handleCreateNamespace(request: Request): Promise<Response> {
+    const userId = request.headers.get('x-user-id') || 'demo-user'
     const data = (await request.json()) as {
-      userId: string
       name: string
       description?: string
     }
 
-    const namespace = await this.createNamespace(data)
+    const namespace = await this.createNamespace({
+      userId,
+      name: data.name,
+      ...(data.description && { description: data.description })
+    })
     return new Response(JSON.stringify(namespace), {
       headers: { 'Content-Type': 'application/json' },
     })
@@ -237,10 +253,16 @@ export class MemoryStorage {
 
         const results: MemorySearchResult[] = []
         for (const match of vectorResults.matches) {
-          const memory = await this.state.storage.get(`memory:${match.id}`)
-          if (memory) {
+          const rawMemory = await this.state.storage.get(`memory:${match.id}`)
+          if (rawMemory) {
+            // Deserialize dates from strings back to Date objects
+            const memory: Memory = {
+              ...(rawMemory as any),
+              createdAt: (rawMemory as any).createdAt instanceof Date ? (rawMemory as any).createdAt : new Date((rawMemory as any).createdAt),
+              updatedAt: (rawMemory as any).updatedAt instanceof Date ? (rawMemory as any).updatedAt : new Date((rawMemory as any).updatedAt)
+            }
             results.push({
-              memory: memory as Memory,
+              memory,
               similarity: match.score,
             })
           }
@@ -262,8 +284,15 @@ export class MemoryStorage {
     const results: MemorySearchResult[] = []
 
     for (const memoryId of userMemories) {
-      const memory = (await this.state.storage.get(`memory:${memoryId}`)) as Memory
-      if (!memory) continue
+      const rawMemory = (await this.state.storage.get(`memory:${memoryId}`)) as any
+      if (!rawMemory) continue
+
+      // Deserialize dates from strings back to Date objects
+      const memory: Memory = {
+        ...rawMemory,
+        createdAt: rawMemory.createdAt instanceof Date ? rawMemory.createdAt : new Date(rawMemory.createdAt),
+        updatedAt: rawMemory.updatedAt instanceof Date ? rawMemory.updatedAt : new Date(rawMemory.updatedAt)
+      }
 
       // Apply filters
       if (options.namespace && memory.namespace !== options.namespace) continue
@@ -282,8 +311,15 @@ export class MemoryStorage {
     const results: Memory[] = []
 
     for (const memoryId of userMemories) {
-      const memory = (await this.state.storage.get(`memory:${memoryId}`)) as Memory
-      if (!memory) continue
+      const rawMemory = (await this.state.storage.get(`memory:${memoryId}`)) as any
+      if (!rawMemory) continue
+
+      // Deserialize dates from strings back to Date objects
+      const memory: Memory = {
+        ...rawMemory,
+        createdAt: rawMemory.createdAt instanceof Date ? rawMemory.createdAt : new Date(rawMemory.createdAt),
+        updatedAt: rawMemory.updatedAt instanceof Date ? rawMemory.updatedAt : new Date(rawMemory.updatedAt)
+      }
 
       if (namespace && memory.namespace !== namespace) continue
       results.push(memory)
@@ -293,8 +329,8 @@ export class MemoryStorage {
   }
 
   async deleteMemory(userId: string, memoryId: string): Promise<void> {
-    const memory = (await this.state.storage.get(`memory:${memoryId}`)) as Memory
-    if (!memory || memory.userId !== userId) {
+    const rawMemory = (await this.state.storage.get(`memory:${memoryId}`)) as any
+    if (!rawMemory || rawMemory.userId !== userId) {
       throw new Error('Memory not found or access denied')
     }
 

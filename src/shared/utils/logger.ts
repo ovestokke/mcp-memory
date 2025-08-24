@@ -79,21 +79,47 @@ class Logger {
     }
   }
 
-  // Utility method for timing operations
-  async time<T>(operation: string, fn: () => Promise<T>, context?: LogContext): Promise<T> {
+  // Utility method for timing operations - sync version
+  time<T>(operation: string, fn: () => T, context?: LogContext): T;
+  // Utility method for timing operations - async version  
+  time<T>(operation: string, fn: () => Promise<T>, context?: LogContext): Promise<T>;
+  time<T>(operation: string, fn: () => T | Promise<T>, context?: LogContext): T | Promise<T> {
     const start = Date.now()
     const opLogger = this.withContext({ operation, ...context })
 
     opLogger.debug(`Starting ${operation}`)
 
     try {
-      const result = await fn()
-      const duration = Date.now() - start
-      opLogger.info(`Completed ${operation}`, { duration })
-      return result
+      const result = fn()
+      
+      if (result instanceof Promise) {
+        // Async case
+        return result.then(
+          (value) => {
+            const duration = Date.now() - start
+            opLogger.info(`Completed ${operation}`, { duration })
+            return value
+          },
+          (error) => {
+            const duration = Date.now() - start
+            const normalizedError: LogContext['error'] =
+              error instanceof Error
+                ? error
+                : typeof error === 'string'
+                ? { name: 'Error', message: error }
+                : { name: 'Error', message: JSON.stringify(error) }
+            opLogger.error(`Failed ${operation}`, { error: normalizedError, duration })
+            throw error
+          }
+        ) as Promise<T>
+      } else {
+        // Sync case
+        const duration = Date.now() - start
+        opLogger.info(`Completed ${operation}`, { duration })
+        return result as T
+      }
     } catch (error) {
       const duration = Date.now() - start
-      // Normalize unknown error to a serializable shape
       const normalizedError: LogContext['error'] =
         error instanceof Error
           ? error

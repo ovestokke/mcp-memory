@@ -17,7 +17,7 @@ describe('MemoryForm', () => {
     render(<MemoryForm {...defaultProps} />)
 
     expect(screen.getByLabelText(/memory content/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/namespace/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/collection/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/labels/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add memory/i })).toBeInTheDocument()
   })
@@ -73,7 +73,7 @@ describe('MemoryForm', () => {
     render(<MemoryForm {...defaultProps} namespaces={[...defaultProps.namespaces, 'invalid@namespace']} />)
 
     const contentInput = screen.getByLabelText(/memory content/i)
-    const namespaceSelect = screen.getByLabelText(/namespace/i)
+    const namespaceSelect = screen.getByLabelText(/collection/i)
     const submitButton = screen.getByRole('button', { name: /add memory/i })
 
     await user.type(contentInput, 'Valid content')
@@ -107,7 +107,7 @@ describe('MemoryForm', () => {
     render(<MemoryForm {...defaultProps} />)
 
     const contentInput = screen.getByLabelText(/memory content/i)
-    const namespaceSelect = screen.getByLabelText(/namespace/i)
+    const namespaceSelect = screen.getByLabelText(/collection/i)
     const labelsInput = screen.getByLabelText(/labels/i)
     const submitButton = screen.getByRole('button', { name: /add memory/i })
 
@@ -177,7 +177,10 @@ describe('MemoryForm', () => {
     await user.type(contentInput, 'Test content')
     await user.click(submitButton)
 
-    expect(screen.getByText('Adding...')).toBeInTheDocument()
+    // Check that the loading state appears
+    await waitFor(() => {
+      expect(screen.getByText('Adding Memory...')).toBeInTheDocument()
+    })
     expect(submitButton).toBeDisabled()
 
     // Resolve the submission

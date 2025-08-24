@@ -79,15 +79,24 @@ describe('ExploreView', () => {
     render(<ExploreView {...defaultProps} />)
 
     expect(screen.getByText('All Collections')).toBeInTheDocument()
-    expect(screen.getByText('projects')).toBeInTheDocument()
-    expect(screen.getByText('personal')).toBeInTheDocument()
-    expect(screen.getByText('ideas')).toBeInTheDocument()
+    // Use more specific selectors for namespace buttons
+    const namespaceButtons = screen.getAllByRole('button').filter(button => 
+      button.textContent === 'projects' || 
+      button.textContent === 'personal' || 
+      button.textContent === 'ideas'
+    )
+    expect(namespaceButtons).toHaveLength(3)
   })
 
   it('should highlight selected namespace', () => {
     render(<ExploreView {...defaultProps} selectedNamespace="projects" />)
 
-    const projectsButton = screen.getByText('projects')
+    // Find the projects button specifically
+    const buttons = screen.getAllByRole('button')
+    const projectsButton = buttons.find(button => 
+      button.textContent === 'projects' && button.className.includes('violet')
+    )
+    expect(projectsButton).toBeInTheDocument()
     expect(projectsButton).toHaveClass('text-violet-700')
   })
 
@@ -95,7 +104,15 @@ describe('ExploreView', () => {
     const user = userEvent.setup()
     render(<ExploreView {...defaultProps} />)
 
-    await user.click(screen.getByText('projects'))
+    // Find the projects namespace button (not the memory card label)
+    const buttons = screen.getAllByRole('button')
+    const projectsButton = buttons.find(button => 
+      button.textContent === 'projects' && 
+      button.className.includes('rounded-full')
+    )
+    
+    expect(projectsButton).toBeInTheDocument()
+    await user.click(projectsButton!)
     expect(defaultProps.onNamespaceChange).toHaveBeenCalledWith('projects')
   })
 
@@ -130,8 +147,13 @@ describe('ExploreView', () => {
   it('should display error message', () => {
     render(<ExploreView {...defaultProps} error="Something went wrong" />)
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
+    // The error message might appear in multiple places (header + description)
+    const errorElements = screen.getAllByText(/Something went wrong/)
+    expect(errorElements.length).toBeGreaterThan(0)
+    
+    // Check that the error section has the proper styling
+    const errorContainer = errorElements[0].closest('.bg-red-50')
+    expect(errorContainer).toBeInTheDocument()
   })
 
   it('should show empty state when no memories', () => {
@@ -164,7 +186,7 @@ describe('ExploreView', () => {
 
   it('should handle singular/plural memory count correctly', () => {
     const singleMemory = [mockMemories[0]]
-    render(<ExploreView {...defaultProps} filteredMemories={singleMemory} />)
+    render(<ExploreView {...defaultProps} memories={singleMemory} filteredMemories={singleMemory} />)
 
     expect(screen.getByText('(1 memory)')).toBeInTheDocument()
   })
@@ -194,7 +216,9 @@ describe('ExploreView', () => {
     render(<ExploreView {...defaultProps} />)
 
     // Check that stat cards have proper structure
-    const statCards = screen.getAllByText(/Total Memories|Collections|Added Today/)
-    expect(statCards).toHaveLength(3)
+    // Use a more specific selector to avoid matching buttons
+    expect(screen.getByText('Total Memories')).toBeInTheDocument()
+    expect(screen.getByText('Collections')).toBeInTheDocument()
+    expect(screen.getByText('Added Today')).toBeInTheDocument()
   })
 })

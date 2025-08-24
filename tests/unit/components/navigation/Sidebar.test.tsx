@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { SessionProvider } from 'next-auth/react'
 import { Sidebar } from '../../../../src/web-ui/components/navigation/Sidebar'
 import { AuthProvider } from '../../../../src/web-ui/contexts/AuthContext'
 import { ThemeProvider } from '../../../../src/web-ui/contexts/ThemeContext'
@@ -46,11 +47,13 @@ Object.defineProperty(window, 'matchMedia', {
 
 function renderSidebar(currentView = 'explore', onViewChange = jest.fn()) {
   return render(
-    <ThemeProvider>
-      <AuthProvider>
-        <Sidebar currentView={currentView} onViewChange={onViewChange} />
-      </AuthProvider>
-    </ThemeProvider>
+    <SessionProvider session={null}>
+      <ThemeProvider>
+        <AuthProvider>
+          <Sidebar currentView={currentView} onViewChange={onViewChange} />
+        </AuthProvider>
+      </ThemeProvider>
+    </SessionProvider>
   )
 }
 
@@ -93,11 +96,13 @@ describe('Sidebar', () => {
     renderSidebar()
 
     // Find collapse button (has transform class when collapsed)
-    const collapseButton = screen.getByRole('button', { name: /collapse/i })
+    const collapseButton = screen.getByRole('button', { name: /collapse sidebar/i })
     await user.click(collapseButton)
 
-    // After collapse, text should be hidden and sidebar should be narrow
-    const sidebar = screen.getByText('Explore').closest('div')?.closest('div')
+    // After collapse, sidebar should be narrow
+    // Find the sidebar by its class since text is hidden when collapsed
+    const sidebar = document.querySelector('.w-16')
+    expect(sidebar).toBeInTheDocument()
     expect(sidebar).toHaveClass('w-16')
   })
 
@@ -155,7 +160,7 @@ describe('Sidebar', () => {
       const user = userEvent.setup()
       renderSidebar()
 
-      const collapseButton = screen.getByRole('button', { name: /collapse/i })
+      const collapseButton = screen.getByRole('button', { name: /collapse sidebar/i })
       await user.click(collapseButton)
 
       // Text should be hidden but icons should still be visible
@@ -167,7 +172,7 @@ describe('Sidebar', () => {
       const user = userEvent.setup()
       renderSidebar()
 
-      const collapseButton = screen.getByRole('button', { name: /collapse/i })
+      const collapseButton = screen.getByRole('button', { name: /collapse sidebar/i })
       await user.click(collapseButton)
 
       // In collapsed state, buttons should still be clickable
