@@ -17,6 +17,32 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                function getThemePreference() {
+                  if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
+                    return localStorage.getItem('theme');
+                  }
+                  return 'system';
+                }
+
+                function getSystemTheme() {
+                  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                }
+
+                const theme = getThemePreference();
+                const resolvedTheme = theme === 'system' ? getSystemTheme() : theme;
+                
+                document.documentElement.classList.remove('light', 'dark');
+                document.documentElement.classList.add(resolvedTheme);
+              })()
+            `,
+          }}
+        />
+      </head>
       <body className={inter.className} suppressHydrationWarning>
         <Providers>
           <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
