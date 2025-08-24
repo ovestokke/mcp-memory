@@ -1,0 +1,7 @@
+# Ignore Next.js build and cache artifacts
+src/web-ui/.next/
+src/web-ui/node_modules/
+.next/
+node_modules/
+dist/
+**/*.log
