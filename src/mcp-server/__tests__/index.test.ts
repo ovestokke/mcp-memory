@@ -35,7 +35,21 @@ const mockAuthenticateRequest = jest.fn().mockResolvedValue({
 
 jest.mock('@shared/auth/oauth', () => ({
   OAuth2Handler: jest.fn().mockImplementation(() => ({
-    generateAuthUrl: jest.fn().mockReturnValue('https://mock-auth-url.com'),
+    generateAuthUrl: jest.fn().mockImplementation((scopes = ['openid', 'email', 'profile'], state?: string) => {
+      // Return a real Google OAuth v2 URL to test endpoint correctness
+      const params = new URLSearchParams({
+        client_id: 'test-client-id',
+        response_type: 'code',
+        scope: scopes.join(' '),
+        access_type: 'offline',
+        include_granted_scopes: 'true',
+        redirect_uri: 'https://example.com/auth/callback'
+      })
+      if (state) {
+        params.set('state', state)
+      }
+      return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    }),
     exchangeCodeForToken: jest.fn().mockResolvedValue({
       access_token: 'mock-token',
       expires_in: 3600,
@@ -137,8 +151,30 @@ describe('MCP Server Worker', () => {
 
       expect(response.status).toBe(200)
       const data = await response.json()
-      expect(data.authUrl).toBe('https://mock-auth-url.com')
+      expect(data.authUrl).toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/)
       expect(data.message).toContain('authenticate with Google')
+    })
+
+    it('should redirect to Google OAuth v2 endpoint for MCP clients', async () => {
+      const request = new Request(
+        'https://example.com/auth?response_type=code&client_id=test_client&redirect_uri=http://localhost:27062/oauth/callback'
+      )
+      const response = await worker.fetch(request, mockEnv)
+
+      expect(response.status).toBe(302)
+      const location = response.headers.get('Location')
+      
+      // Ensure we're using the correct Google OAuth v2 endpoint
+      expect(location).toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/)
+      
+      // Ensure we're NOT using the deprecated endpoint that caused 404s
+      expect(location).not.toMatch(/\/oauth2\/auth\?/)
+      
+      // Verify essential OAuth parameters are present
+      const urlObj = new URL(location!)
+      expect(urlObj.searchParams.get('client_id')).toBe('test-client-id')
+      expect(urlObj.searchParams.get('response_type')).toBe('code')
+      expect(urlObj.searchParams.get('redirect_uri')).toBe('https://example.com/auth/callback')
     })
   })
 

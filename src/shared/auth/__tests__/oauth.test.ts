@@ -1,25 +1,8 @@
 /**
- * Tests for the refactored OAuth2 handler using google-auth-library
+ * Tests for the Workers-compatible OAuth2 handler
  */
 
 import { OAuth2Handler } from '../oauth'
-
-// Mock google-auth-library
-const mockGenerateAuthUrl = jest.fn()
-const mockGetToken = jest.fn()
-const mockRefreshAccessToken = jest.fn()
-const mockVerifyIdToken = jest.fn()
-const mockSetCredentials = jest.fn()
-
-jest.mock('google-auth-library', () => ({
-  OAuth2Client: jest.fn().mockImplementation(() => ({
-    generateAuthUrl: mockGenerateAuthUrl,
-    getToken: mockGetToken,
-    refreshAccessToken: mockRefreshAccessToken,
-    verifyIdToken: mockVerifyIdToken,
-    setCredentials: mockSetCredentials,
-  })),
-}))
 
 // Mock logger
 jest.mock('../../utils/logger', () => {
@@ -37,7 +20,7 @@ jest.mock('../../utils/logger', () => {
 const mockFetch = jest.fn()
 global.fetch = mockFetch
 
-describe('OAuth2Handler (Refactored)', () => {
+describe('OAuth2Handler (Workers Compatible)', () => {
   let handler: OAuth2Handler
 
   beforeEach(() => {
@@ -47,46 +30,47 @@ describe('OAuth2Handler (Refactored)', () => {
       redirectUri: 'http://localhost:3000/auth/callback',
     })
     
-    // Clear all mocks
-    mockGenerateAuthUrl.mockClear()
-    mockGetToken.mockClear()
-    mockRefreshAccessToken.mockClear()
-    mockVerifyIdToken.mockClear()
-    mockSetCredentials.mockClear()
+    // Clear fetch mock
     mockFetch.mockClear()
   })
 
   describe('generateAuthUrl', () => {
-    it('should generate OAuth2 authorization URL', () => {
-      const mockUrl = 'https://accounts.google.com/oauth2/auth?client_id=test&scope=openid%20email%20profile'
-      mockGenerateAuthUrl.mockReturnValue(mockUrl)
+    it('should use the correct Google OAuth v2 endpoint', () => {
+      const url = handler.generateAuthUrl()
+      
+      expect(url).toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/)
+    })
 
+    it('should generate OAuth2 authorization URL with correct parameters', () => {
       const url = handler.generateAuthUrl()
 
-      expect(mockGenerateAuthUrl).toHaveBeenCalledWith({
-        access_type: 'offline',
-        scope: ['openid', 'email', 'profile'],
-        state: undefined,
-        include_granted_scopes: true,
-      })
-      expect(url).toBe(mockUrl)
+      const urlObj = new URL(url)
+      expect(urlObj.origin + urlObj.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth')
+      expect(urlObj.searchParams.get('client_id')).toBe('test-client-id')
+      expect(urlObj.searchParams.get('response_type')).toBe('code')
+      expect(urlObj.searchParams.get('scope')).toBe('openid email profile')
+      expect(urlObj.searchParams.get('access_type')).toBe('offline')
+      expect(urlObj.searchParams.get('include_granted_scopes')).toBe('true')
+      expect(urlObj.searchParams.get('redirect_uri')).toBe('http://localhost:3000/auth/callback')
     })
 
     it('should accept custom scopes and state', () => {
       const customScopes = ['openid', 'email']
       const state = 'custom-state-123'
-      const mockUrl = 'https://accounts.google.com/oauth2/auth?state=custom-state-123'
-      mockGenerateAuthUrl.mockReturnValue(mockUrl)
-
+      
       const url = handler.generateAuthUrl(customScopes, state)
+      
+      const urlObj = new URL(url)
+      expect(urlObj.searchParams.get('scope')).toBe('openid email')
+      expect(urlObj.searchParams.get('state')).toBe('custom-state-123')
+    })
 
-      expect(mockGenerateAuthUrl).toHaveBeenCalledWith({
-        access_type: 'offline',
-        scope: customScopes,
-        state,
-        include_granted_scopes: true,
-      })
-      expect(url).toBe(mockUrl)
+    it('should NOT use the deprecated oauth2/auth endpoint', () => {
+      const url = handler.generateAuthUrl()
+      
+      // Ensure we're not using the old endpoint that caused 404 errors
+      expect(url).not.toMatch(/\/oauth2\/auth\?/)
+      expect(url).toMatch(/\/o\/oauth2\/v2\/auth\?/)
     })
   })
 
@@ -95,20 +79,33 @@ describe('OAuth2Handler (Refactored)', () => {
       const mockTokens = {
         access_token: 'access-token-123',
         refresh_token: 'refresh-token-456',
-        expiry_date: Date.now() + 3600000,
+        expires_in: 3600,
+        token_type: 'Bearer',
         scope: 'openid email profile',
         id_token: 'id-token-789',
       }
       
-      mockGetToken.mockResolvedValue({ tokens: mockTokens })
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockTokens),
+      })
 
       const result = await handler.exchangeCodeForToken('auth-code-123')
 
-      expect(mockGetToken).toHaveBeenCalledWith('auth-code-123')
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://oauth2.googleapis.com/token',
+        expect.objectContaining({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        })
+      )
+      
       expect(result).toEqual({
         access_token: 'access-token-123',
         refresh_token: 'refresh-token-456',
-        expires_in: expect.any(Number),
+        expires_in: 3600,
         token_type: 'Bearer',
         scope: 'openid email profile',
         id_token: 'id-token-789',
@@ -116,46 +113,81 @@ describe('OAuth2Handler (Refactored)', () => {
     })
 
     it('should handle token exchange errors', async () => {
-      const error = new Error('Invalid authorization code')
-      mockGetToken.mockRejectedValue(error)
+      mockFetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({
+          error: 'invalid_grant',
+          error_description: 'Invalid authorization code'
+        }),
+        statusText: 'Bad Request'
+      })
 
       await expect(handler.exchangeCodeForToken('invalid-code'))
-        .rejects.toThrow('Invalid authorization code')
+        .rejects.toThrow('Token exchange failed: Invalid authorization code')
+    })
+
+    it('should use the correct Google token endpoint', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ access_token: 'test' }),
+      })
+
+      await handler.exchangeCodeForToken('test-code')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://oauth2.googleapis.com/token',
+        expect.any(Object)
+      )
     })
   })
 
   describe('refreshToken', () => {
     it('should successfully refresh access token', async () => {
-      const mockCredentials = {
+      const mockTokenResponse = {
         access_token: 'new-access-token',
         refresh_token: 'new-refresh-token',
-        expiry_date: Date.now() + 3600000,
+        expires_in: 3600,
+        token_type: 'Bearer',
         scope: 'openid email profile',
       }
       
-      mockRefreshAccessToken.mockResolvedValue({ credentials: mockCredentials })
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockTokenResponse),
+      })
 
       const result = await handler.refreshToken('old-refresh-token')
 
-      expect(mockSetCredentials).toHaveBeenCalledWith({ 
-        refresh_token: 'old-refresh-token' 
-      })
-      expect(mockRefreshAccessToken).toHaveBeenCalled()
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://oauth2.googleapis.com/token',
+        expect.objectContaining({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        })
+      )
       expect(result).toEqual({
         access_token: 'new-access-token',
         refresh_token: 'new-refresh-token',
-        expires_in: expect.any(Number),
+        expires_in: 3600,
         token_type: 'Bearer',
         scope: 'openid email profile',
       })
     })
 
     it('should handle refresh token errors', async () => {
-      const error = new Error('Invalid refresh token')
-      mockRefreshAccessToken.mockRejectedValue(error)
+      mockFetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({
+          error: 'invalid_grant',
+          error_description: 'Invalid refresh token'
+        }),
+        statusText: 'Bad Request'
+      })
 
       await expect(handler.refreshToken('invalid-refresh-token'))
-        .rejects.toThrow('Invalid refresh token')
+        .rejects.toThrow('Token refresh failed: Invalid refresh token')
     })
   })
 
@@ -176,38 +208,12 @@ describe('OAuth2Handler (Refactored)', () => {
         locale: 'en',
       })
       
-      // Should not call Google Auth Library for service tokens
-      expect(mockVerifyIdToken).not.toHaveBeenCalled()
+      // Should not call Google API for service tokens
+      expect(mockFetch).not.toHaveBeenCalled()
     })
 
-    it('should validate Google ID tokens', async () => {
-      const mockPayload = {
-        sub: 'google-user-123',
-        email: 'user@example.com',
-        email_verified: true,
-        name: 'Test User',
-        given_name: 'Test',
-        family_name: 'User',
-        picture: 'https://example.com/photo.jpg',
-        locale: 'en',
-      }
-      
-      const mockTicket = {
-        getPayload: jest.fn().mockReturnValue(mockPayload)
-      }
-      
-      mockVerifyIdToken.mockResolvedValue(mockTicket)
-
-      const result = await handler.validateToken('google-id-token')
-
-      expect(mockSetCredentials).toHaveBeenCalledWith({
-        access_token: 'google-id-token'
-      })
-      expect(mockVerifyIdToken).toHaveBeenCalledWith({
-        idToken: 'google-id-token',
-        audience: 'test-client-id',
-      })
-      expect(result).toEqual({
+    it('should validate Google access tokens via userinfo endpoint', async () => {
+      const mockUserInfo = {
         id: 'google-user-123',
         email: 'user@example.com',
         verified_email: true,
@@ -215,26 +221,6 @@ describe('OAuth2Handler (Refactored)', () => {
         given_name: 'Test',
         family_name: 'User',
         picture: 'https://example.com/photo.jpg',
-        locale: 'en',
-      })
-    })
-
-    it('should fall back to userinfo endpoint for access tokens', async () => {
-      // Mock verifyIdToken to fail (indicating it's not an ID token)
-      const mockTicket = {
-        getPayload: jest.fn().mockReturnValue(null)
-      }
-      mockVerifyIdToken.mockResolvedValue(mockTicket)
-      
-      // Mock userinfo API response
-      const mockUserInfo = {
-        id: 'google-user-456',
-        email: 'access@example.com',
-        verified_email: true,
-        name: 'Access User',
-        given_name: 'Access',
-        family_name: 'User',
-        picture: '',
         locale: 'en',
       }
       
@@ -253,53 +239,27 @@ describe('OAuth2Handler (Refactored)', () => {
           },
         }
       )
-      expect(result).toEqual({
-        id: 'google-user-456',
-        email: 'access@example.com',
-        verified_email: true,
-        name: 'Access User',
-        given_name: 'Access',
-        family_name: 'User',
-        picture: '',
-        locale: 'en',
-      })
+      expect(result).toEqual(mockUserInfo)
     })
 
-    it('should reject unverified email addresses', async () => {
-      // Mock ID token with unverified email
-      const mockPayload = {
-        sub: 'google-user-123',
+    it('should reject unverified email addresses from userinfo endpoint', async () => {
+      const mockUserInfo = {
+        id: 'google-user-123',
         email: 'unverified@example.com',
-        email_verified: false,
+        verified_email: false,
         name: 'Unverified User',
-        given_name: 'Unverified',
-        family_name: 'User',
-        picture: '',
-        locale: 'en',
       }
       
-      const mockTicket = {
-        getPayload: jest.fn().mockReturnValue(mockPayload)
-      }
-      
-      // Reset all mocks first
-      mockVerifyIdToken.mockClear()
-      mockFetch.mockClear()
-      mockSetCredentials.mockClear()
-      
-      // Set up the specific mock for this test
-      mockVerifyIdToken.mockResolvedValue(mockTicket)
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockUserInfo),
+      })
 
       await expect(handler.validateToken('token-with-unverified-email'))
         .rejects.toThrow('Email address is not verified')
     })
 
     it('should handle token validation failures', async () => {
-      const error = new Error('Token verification failed')
-      mockVerifyIdToken.mockRejectedValue(error)
-      
-      // Also mock fetch to fail for userinfo fallback
-      mockFetch.mockClear()
       mockFetch.mockRejectedValue(new Error('Network error'))
 
       await expect(handler.validateToken('invalid-token'))
@@ -334,10 +294,10 @@ describe('OAuth2Handler (Refactored)', () => {
         },
       })
 
-      const mockPayload = {
-        sub: 'user-123',
+      const mockUserInfo = {
+        id: 'user-123',
         email: 'test@example.com',
-        email_verified: true,
+        verified_email: true,
         name: 'Test User',
         given_name: 'Test',
         family_name: 'User',
@@ -345,11 +305,10 @@ describe('OAuth2Handler (Refactored)', () => {
         locale: 'en',
       }
       
-      const mockTicket = {
-        getPayload: jest.fn().mockReturnValue(mockPayload)
-      }
-      
-      mockVerifyIdToken.mockResolvedValue(mockTicket)
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockUserInfo),
+      })
 
       const result = await handler.authenticateRequest(mockRequest)
 
@@ -372,11 +331,6 @@ describe('OAuth2Handler (Refactored)', () => {
         },
       })
 
-      const error = new Error('Invalid token')
-      mockVerifyIdToken.mockRejectedValue(error)
-      
-      // Also mock fetch to fail for userinfo fallback
-      mockFetch.mockClear()
       mockFetch.mockRejectedValue(new Error('Network error'))
 
       await expect(handler.authenticateRequest(mockRequest))

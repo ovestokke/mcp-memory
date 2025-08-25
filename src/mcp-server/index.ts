@@ -85,9 +85,11 @@ export default {
 
     try {
       // Initialize OAuth2 handler
+      const baseUrl = `${url.protocol}//${url.host}`
       const oauthConfig: GoogleOAuthConfig = {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
+        redirectUri: `${baseUrl}/auth/callback`,
       }
       const oauth = new OAuth2Handler(oauthConfig)
 
@@ -225,6 +227,9 @@ export default {
         const clientId = url.searchParams.get('client_id')
         const redirectUri = url.searchParams.get('redirect_uri')
         const responseType = url.searchParams.get('response_type')
+        const codeChallenge = url.searchParams.get('code_challenge')
+        const codeChallengeMethod = url.searchParams.get('code_challenge_method')
+        const resource = url.searchParams.get('resource')
 
         // If this is a proper OAuth authorization request with parameters, redirect to Google
         if (clientId && redirectUri && responseType === 'code') {
@@ -234,11 +239,14 @@ export default {
           const stateWithRedirect = JSON.stringify({
             original_state: originalState,
             redirect_uri: redirectUri,
-            client_id: clientId
+            client_id: clientId,
+            ...(codeChallenge && { code_challenge: codeChallenge }),
+            ...(codeChallengeMethod && { code_challenge_method: codeChallengeMethod }),
+            ...(resource && { resource: resource }),
           })
           const encodedState = btoa(stateWithRedirect) // Base64 encode
 
-          const authUrl = oauth.generateAuthUrl(encodedState)
+          const authUrl = oauth.generateAuthUrl(['openid', 'email', 'profile'], encodedState)
 
           // Redirect directly to Google OAuth
           return new Response(null, {
@@ -251,7 +259,7 @@ export default {
         }
 
         // If it's just a simple request for auth URL (no OAuth params), return JSON
-        const authUrl = oauth.generateAuthUrl(state || undefined)
+        const authUrl = oauth.generateAuthUrl(['openid', 'email', 'profile'], state || undefined)
         return new Response(
           JSON.stringify({
             authUrl,

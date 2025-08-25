@@ -1,11 +1,9 @@
 /**
- * Modern OAuth2 Authentication Handler using Google Auth Library
+ * OAuth2 Authentication Handler for Cloudflare Workers
  * 
- * This replaces the custom OAuth2 implementation with Google's official library
- * for better security, reliability, and maintenance.
+ * This provides OAuth2 functionality using Web APIs compatible with Cloudflare Workers.
  */
 
-import { OAuth2Client } from 'google-auth-library'
 import { logger } from '../utils/logger'
 
 // OAuthError class definition (moved here from oauth-original.ts)
@@ -43,16 +41,9 @@ export interface AuthenticationResult {
 }
 
 export class OAuth2Handler {
-  private client: OAuth2Client
   private authLogger = logger.withContext({ module: 'OAuth2Handler' })
 
-  constructor(private config: GoogleOAuthConfig) {
-    this.client = new OAuth2Client(
-      config.clientId,
-      config.clientSecret,
-      config.redirectUri
-    )
-  }
+  constructor(private config: GoogleOAuthConfig) {}
 
   /**
    * Generate OAuth2 authorization URL
@@ -60,17 +51,23 @@ export class OAuth2Handler {
   generateAuthUrl(scopes = ['openid', 'email', 'profile'], state?: string): string {
     const requestLogger = this.authLogger.withContext({ operation: 'generateAuthUrl' })
     
-    const authOptions: any = {
+    const params = new URLSearchParams({
+      client_id: this.config.clientId,
+      response_type: 'code',
+      scope: scopes.join(' '),
       access_type: 'offline',
-      scope: scopes,
-      include_granted_scopes: true,
+      include_granted_scopes: 'true',
+    })
+
+    if (this.config.redirectUri) {
+      params.set('redirect_uri', this.config.redirectUri)
     }
     
     if (state) {
-      authOptions.state = state
+      params.set('state', state)
     }
     
-    const url = this.client.generateAuthUrl(authOptions)
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
     
     requestLogger.info('Generated OAuth2 authorization URL')
     return url
@@ -83,19 +80,43 @@ export class OAuth2Handler {
     const requestLogger = this.authLogger.withContext({ operation: 'exchangeCodeForToken' })
     
     try {
-      const { tokens } = await this.client.getToken(code)
+      const params = new URLSearchParams({
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        code: code,
+        grant_type: 'authorization_code',
+      })
+
+      if (this.config.redirectUri) {
+        params.set('redirect_uri', this.config.redirectUri)
+      }
+
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})) as any
+        throw new Error(`Token exchange failed: ${errorData.error_description || response.statusText}`)
+      }
+
+      const tokens = await response.json() as any
       
       requestLogger.info('Successfully exchanged authorization code for tokens', {
         hasAccessToken: !!tokens.access_token,
         hasRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expiry_date,
+        expiresIn: tokens.expires_in,
       })
       
       return {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
-        expires_in: tokens.expiry_date ? Math.floor((tokens.expiry_date - Date.now()) / 1000) : undefined,
-        token_type: 'Bearer',
+        expires_in: tokens.expires_in,
+        token_type: tokens.token_type || 'Bearer',
         scope: tokens.scope,
         id_token: tokens.id_token,
       }
@@ -114,17 +135,36 @@ export class OAuth2Handler {
     const requestLogger = this.authLogger.withContext({ operation: 'refreshToken' })
     
     try {
-      this.client.setCredentials({ refresh_token: refreshToken })
-      const { credentials } = await this.client.refreshAccessToken()
+      const params = new URLSearchParams({
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      })
+
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})) as any
+        throw new Error(`Token refresh failed: ${errorData.error_description || response.statusText}`)
+      }
+
+      const tokens = await response.json() as any
       
       requestLogger.info('Successfully refreshed access token')
       
       return {
-        access_token: credentials.access_token,
-        refresh_token: credentials.refresh_token || refreshToken, // Keep original if not returned
-        expires_in: credentials.expiry_date ? Math.floor((credentials.expiry_date - Date.now()) / 1000) : undefined,
-        token_type: 'Bearer',
-        scope: credentials.scope,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || refreshToken, // Keep original if not returned
+        expires_in: tokens.expires_in,
+        token_type: tokens.token_type || 'Bearer',
+        scope: tokens.scope,
       }
     } catch (error) {
       requestLogger.error('Token refresh failed', { 
@@ -159,48 +199,37 @@ export class OAuth2Handler {
     }
 
     try {
-      // Use Google Auth Library to verify and get user info
-      this.client.setCredentials({ access_token: accessToken })
-      
-      try {
-        // Try to verify as ID token first
-        const ticket = await this.client.verifyIdToken({
-          idToken: accessToken,
-          audience: this.config.clientId,
-        })
-        
-        const payload = ticket.getPayload()
-        if (payload && payload.sub) {
-          // Process ID token payload
-          if (!payload.email_verified) {
-            // Don't fall back to userinfo for ID tokens with unverified email
+      // Try to parse as JWT/ID token first
+      if (accessToken.includes('.')) {
+        try {
+          const payload = this.parseJWT(accessToken)
+          if (payload && payload.sub && payload.email_verified) {
+            requestLogger.info('Token validation successful (ID token)', {
+              userId: payload.sub,
+              email: payload.email,
+            })
+
+            return {
+              id: payload.sub,
+              email: payload.email!,
+              verified_email: payload.email_verified!,
+              name: payload.name || `${payload.given_name || ''} ${payload.family_name || ''}`.trim(),
+              given_name: payload.given_name || '',
+              family_name: payload.family_name || '',
+              picture: payload.picture || '',
+              locale: payload.locale || 'en',
+            }
+          } else if (payload && payload.sub && !payload.email_verified) {
             throw new Error('Email address is not verified')
           }
-
-          requestLogger.info('Token validation successful (ID token)', {
-            userId: payload.sub,
-            email: payload.email,
-          })
-
-          return {
-            id: payload.sub,
-            email: payload.email!,
-            verified_email: payload.email_verified!,
-            name: payload.name || `${payload.given_name} ${payload.family_name}`.trim(),
-            given_name: payload.given_name || '',
-            family_name: payload.family_name || '',
-            picture: payload.picture || '',
-            locale: payload.locale || 'en',
+        } catch (idTokenError) {
+          if (idTokenError instanceof Error && 
+              idTokenError.message.includes('Email address is not verified')) {
+            throw idTokenError
           }
+          // Not a valid ID token, fall back to userinfo endpoint
+          requestLogger.info('ID token parsing failed, falling back to userinfo endpoint')
         }
-      } catch (idTokenError) {
-        // If error is about email verification, don't fall back
-        if (idTokenError instanceof Error && 
-            idTokenError.message.includes('Email address is not verified')) {
-          throw idTokenError
-        }
-        // Otherwise, not an ID token, fall back to userinfo endpoint
-        requestLogger.info('ID token verification failed, falling back to userinfo endpoint')
       }
 
       // Fall back to userinfo endpoint for access tokens
@@ -313,6 +342,27 @@ export class OAuth2Handler {
       })
       
       throw new OAuthError('Authentication failed', 500)
+    }
+  }
+
+  /**
+   * Parse JWT token payload (basic implementation for ID tokens)
+   */
+  private parseJWT(token: string): any {
+    try {
+      const parts = token.split('.')
+      if (parts.length !== 3) {
+        throw new Error('Invalid JWT format')
+      }
+      
+      const payloadPart = parts[1]
+      if (!payloadPart) {
+        throw new Error('Missing JWT payload')
+      }
+      const decoded = atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/'))
+      return JSON.parse(decoded)
+    } catch (error) {
+      throw new Error('Failed to parse JWT token')
     }
   }
 }
