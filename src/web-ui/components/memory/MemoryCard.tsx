@@ -39,7 +39,7 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
     return content.substring(0, maxLength) + '...'
   }
 
-  const getNamespaceColor = (namespace: string) => {
+  const getNamespaceColor = (namespace: string | undefined) => {
     const colors = [
       'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
       'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300',
@@ -50,6 +50,11 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
       'bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300',
       'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
     ]
+    
+    // Handle undefined namespace
+    if (!namespace) {
+      return 'bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-300'
+    }
     
     // Simple hash function to consistently assign colors
     let hash = 0
@@ -68,7 +73,7 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center space-x-3 flex-1 min-w-0">
           <span className={`px-3 py-1 rounded-full text-xs font-medium ${getNamespaceColor(memory.namespace)}`}>
-            {memory.namespace}
+            {memory.namespace || 'general'}
           </span>
           <span className="text-sm text-gray-500 dark:text-gray-400">
             {formatDate(memory.createdAt)}
