@@ -22,6 +22,9 @@ const customJestConfig = {
     '<rootDir>/dist/',
   '<rootDir>/tests/e2e/',
   ],
+  transformIgnorePatterns: [
+    'node_modules/(?!(ky)/)',
+  ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
