@@ -24,14 +24,23 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
     }
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) {
+      return 'Unknown date'
+    }
+    
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) {
+      return 'Invalid date'
+    }
+    
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(new Date(dateString))
+    }).format(date)
   }
 
   const truncateContent = (content: string, maxLength: number = 200) => {

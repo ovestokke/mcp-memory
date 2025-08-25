@@ -130,9 +130,9 @@ export function ExploreView({
           >
             All Collections
           </button>
-          {namespaces.map((namespace) => (
+          {namespaces.map((namespace, index) => (
             <button
-              key={namespace}
+              key={`${namespace}-${index}`}
               onClick={() => onNamespaceChange(namespace)}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                 selectedNamespace === namespace
@@ -201,9 +201,9 @@ export function ExploreView({
             </div>
             
             <div className="grid gap-4">
-              {displayMemories.map((memory) => (
+              {displayMemories.map((memory, index) => (
                 <MemoryCard
-                  key={memory.id}
+                  key={memory.id || `memory-${index}`}
                   memory={memory}
                   onDelete={() => onDeleteMemory(memory.id)}
                 />
