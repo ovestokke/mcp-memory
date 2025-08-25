@@ -113,7 +113,7 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
         <div className="prose dark:prose-invert max-w-none">
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
             {showFullContent ? memory.content : truncateContent(memory.content)}
-            {memory.content.length > 200 && (
+            {memory.content && memory.content.length > 200 && (
               <button
                 onClick={() => setShowFullContent(!showFullContent)}
                 className="ml-2 text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium text-sm transition-colors"
