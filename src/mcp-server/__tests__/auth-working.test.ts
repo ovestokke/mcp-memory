@@ -7,7 +7,18 @@
 
 import { OAuth2Handler } from '../../shared/auth/oauth'
 
-// Mock fetch for Google OAuth API calls
+// Mock google-auth-library
+const mockVerifyIdToken = jest.fn()
+const mockSetCredentials = jest.fn()
+
+jest.mock('google-auth-library', () => ({
+  OAuth2Client: jest.fn().mockImplementation(() => ({
+    verifyIdToken: mockVerifyIdToken,
+    setCredentials: mockSetCredentials,
+  })),
+}))
+
+// Mock fetch for userinfo fallback
 const mockFetch = jest.fn()
 global.fetch = mockFetch
 
@@ -36,7 +47,11 @@ describe('Authentication Working Tests', () => {
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
     })
+    
+    // Clear all mocks
     mockFetch.mockClear()
+    mockVerifyIdToken.mockClear()
+    mockSetCredentials.mockClear()
   })
 
   describe('MCP Service Token Authentication', () => {
@@ -84,7 +99,13 @@ describe('Authentication Working Tests', () => {
 
   describe('Google OAuth Authentication', () => {
     it('should authenticate Google OAuth tokens correctly', async () => {
-      // Mock Google user info response
+      // Mock verifyIdToken to fail (not an ID token)
+      const mockTicket = {
+        getPayload: jest.fn().mockReturnValue(null)
+      }
+      mockVerifyIdToken.mockResolvedValue(mockTicket)
+      
+      // Mock userinfo fallback response
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValue({
@@ -105,13 +126,19 @@ describe('Authentication Working Tests', () => {
       expect(userInfo.email).toBe('user@example.com')
       expect(userInfo.verified_email).toBe(true)
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('googleapis.com/oauth2/v2/userinfo'),
+        'https://www.googleapis.com/oauth2/v2/userinfo',
         expect.any(Object)
       )
     })
 
     it('should authenticate web UI requests end-to-end', async () => {
-      // Mock Google user info response
+      // Mock verifyIdToken to fail (not an ID token)
+      const mockTicket = {
+        getPayload: jest.fn().mockReturnValue(null)
+      }
+      mockVerifyIdToken.mockResolvedValue(mockTicket)
+      
+      // Mock userinfo fallback response
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValue({
@@ -148,6 +175,12 @@ describe('Authentication Working Tests', () => {
       expect(mcpUser.id).toBe('mcp_service_user')
 
       // Test Google token second
+      // Mock verifyIdToken to fail (not an ID token)
+      const mockTicket = {
+        getPayload: jest.fn().mockReturnValue(null)
+      }
+      mockVerifyIdToken.mockResolvedValue(mockTicket)
+      
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValue({
@@ -181,6 +214,10 @@ describe('Authentication Working Tests', () => {
   })
 
   describe('Error Scenarios', () => {
+    const fail = (message?: string) => {
+      throw new Error(message || 'Test should not reach this point')
+    }
+
     it('should handle missing auth headers', async () => {
       const request = new Request('http://localhost:8787/api/test')
 
@@ -194,7 +231,10 @@ describe('Authentication Working Tests', () => {
     })
 
     it('should handle invalid Google tokens', async () => {
-      // Mock Google API error
+      // Mock verifyIdToken to fail
+      mockVerifyIdToken.mockRejectedValue(new Error('Invalid token'))
+      
+      // Mock userinfo fallback to also fail
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 401,
@@ -207,13 +247,16 @@ describe('Authentication Working Tests', () => {
         await oauthHandler.validateToken('invalid-google-token')
         fail('Should have thrown an error')
       } catch (error: any) {
-        expect(error.message).toContain('Invalid or expired token')
+        expect(error.message).toContain('Failed to validate access token')
         expect(error.status).toBe(401)
       }
     })
 
     it('should handle network failures gracefully', async () => {
-      // Mock network error
+      // Mock verifyIdToken to fail
+      mockVerifyIdToken.mockRejectedValue(new Error('Network timeout'))
+      
+      // Mock userinfo fallback to also fail
       mockFetch.mockRejectedValueOnce(new Error('Network timeout'))
 
       try {

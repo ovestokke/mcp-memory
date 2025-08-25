@@ -1,18 +1,23 @@
+/**
+ * Modern OAuth2 Authentication Handler using Google Auth Library
+ * 
+ * This replaces the custom OAuth2 implementation with Google's official library
+ * for better security, reliability, and maintenance.
+ */
+
+import { OAuth2Client } from 'google-auth-library'
 import { logger } from '../utils/logger'
 
-export interface GoogleOAuthConfig {
-  clientId: string
-  clientSecret: string
-  redirectUri?: string
-}
-
-export interface OAuthTokenResponse {
-  access_token: string
-  token_type: string
-  expires_in: number
-  refresh_token?: string
-  scope: string
-  id_token?: string
+// OAuthError class definition (moved here from oauth-original.ts)
+export class OAuthError extends Error {
+  constructor(
+    message: string,
+    public status: number = 401,
+    public code?: string
+  ) {
+    super(message)
+    this.name = 'OAuthError'
+  }
 }
 
 export interface GoogleUserInfo {
@@ -26,134 +31,106 @@ export interface GoogleUserInfo {
   locale: string
 }
 
-export class OAuthError extends Error {
-  constructor(
-    message: string,
-    public status: number = 401,
-    public code?: string
-  ) {
-    super(message)
-    this.name = 'OAuthError'
-  }
+export interface GoogleOAuthConfig {
+  clientId: string
+  clientSecret: string
+  redirectUri?: string
+}
+
+export interface AuthenticationResult {
+  user: GoogleUserInfo
+  token: string
 }
 
 export class OAuth2Handler {
-  private config: GoogleOAuthConfig
-  private authLogger: typeof logger
+  private client: OAuth2Client
+  private authLogger = logger.withContext({ module: 'OAuth2Handler' })
 
-  constructor(config: GoogleOAuthConfig) {
-    this.config = config
-    this.authLogger = logger.withContext({ component: 'OAuth2Handler' })
+  constructor(private config: GoogleOAuthConfig) {
+    this.client = new OAuth2Client(
+      config.clientId,
+      config.clientSecret,
+      config.redirectUri
+    )
   }
 
   /**
-   * Generate OAuth2 authorization URL for Google
+   * Generate OAuth2 authorization URL
    */
-  generateAuthUrl(state?: string, scopes: string[] = ['openid', 'email', 'profile']): string {
-    const params = new URLSearchParams({
-      client_id: this.config.clientId,
-      response_type: 'code',
-      scope: scopes.join(' '),
-      redirect_uri: this.config.redirectUri || 'http://localhost:8787/auth/callback',
+  generateAuthUrl(scopes = ['openid', 'email', 'profile'], state?: string): string {
+    const requestLogger = this.authLogger.withContext({ operation: 'generateAuthUrl' })
+    
+    const authOptions: any = {
       access_type: 'offline',
-      prompt: 'consent',
-      ...(state && { state }),
-    })
-
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+      scope: scopes,
+      include_granted_scopes: true,
+    }
+    
+    if (state) {
+      authOptions.state = state
+    }
+    
+    const url = this.client.generateAuthUrl(authOptions)
+    
+    requestLogger.info('Generated OAuth2 authorization URL')
+    return url
   }
 
   /**
-   * Exchange authorization code for access token
+   * Exchange authorization code for tokens
    */
-  async exchangeCodeForToken(code: string): Promise<OAuthTokenResponse> {
+  async exchangeCodeForToken(code: string): Promise<any> {
     const requestLogger = this.authLogger.withContext({ operation: 'exchangeCodeForToken' })
-
+    
     try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          code,
-          grant_type: 'authorization_code',
-          redirect_uri: this.config.redirectUri || 'http://localhost:8787/auth/callback',
-        }),
+      const { tokens } = await this.client.getToken(code)
+      
+      requestLogger.info('Successfully exchanged authorization code for tokens', {
+        hasAccessToken: !!tokens.access_token,
+        hasRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expiry_date,
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any
-        requestLogger.error('Token exchange failed', {
-          status: response.status,
-          error: errorData instanceof Error ? errorData : JSON.stringify(errorData),
-        })
-        throw new OAuthError(
-          `Token exchange failed: ${errorData?.error_description || response.statusText}`,
-          response.status,
-          errorData?.error
-        )
+      
+      return {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_in: tokens.expiry_date ? Math.floor((tokens.expiry_date - Date.now()) / 1000) : undefined,
+        token_type: 'Bearer',
+        scope: tokens.scope,
+        id_token: tokens.id_token,
       }
-
-      const tokenData: OAuthTokenResponse = await response.json()
-      requestLogger.info('Token exchange successful', {
-        expiresIn: tokenData.expires_in,
-        scope: tokenData.scope,
-      })
-
-      return tokenData
     } catch (error) {
-      if (error instanceof OAuthError) throw error
-      requestLogger.error('Token exchange error', { error: error instanceof Error ? error : String(error) })
-      throw new OAuthError('Failed to exchange authorization code for token')
+      requestLogger.error('Token exchange failed', { 
+        error: error instanceof Error ? error.message : String(error) 
+      })
+      throw error
     }
   }
 
   /**
    * Refresh access token using refresh token
    */
-  async refreshToken(refreshToken: string): Promise<OAuthTokenResponse> {
+  async refreshToken(refreshToken: string): Promise<any> {
     const requestLogger = this.authLogger.withContext({ operation: 'refreshToken' })
-
+    
     try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token',
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any
-        requestLogger.error('Token refresh failed', {
-          status: response.status,
-          error: errorData instanceof Error ? errorData : JSON.stringify(errorData),
-        })
-        throw new OAuthError(
-          `Token refresh failed: ${errorData?.error_description || response.statusText}`,
-          response.status,
-          errorData?.error
-        )
+      this.client.setCredentials({ refresh_token: refreshToken })
+      const { credentials } = await this.client.refreshAccessToken()
+      
+      requestLogger.info('Successfully refreshed access token')
+      
+      return {
+        access_token: credentials.access_token,
+        refresh_token: credentials.refresh_token || refreshToken, // Keep original if not returned
+        expires_in: credentials.expiry_date ? Math.floor((credentials.expiry_date - Date.now()) / 1000) : undefined,
+        token_type: 'Bearer',
+        scope: credentials.scope,
       }
-
-      const tokenData: OAuthTokenResponse = await response.json()
-      requestLogger.info('Token refresh successful', {
-        expiresIn: tokenData.expires_in,
-      })
-
-      return tokenData
     } catch (error) {
-      if (error instanceof OAuthError) throw error
-      requestLogger.error('Token refresh error', { error: error instanceof Error ? error : String(error) })
-      throw new OAuthError('Failed to refresh access token')
+      requestLogger.error('Token refresh failed', { 
+        error: error instanceof Error ? error.message : String(error) 
+      })
+      throw error
     }
   }
 
@@ -163,14 +140,12 @@ export class OAuth2Handler {
   async validateToken(accessToken: string): Promise<GoogleUserInfo> {
     const requestLogger = this.authLogger.withContext({ operation: 'validateToken' })
 
-    // Check if this is an MCP service token
+    // Handle MCP service tokens (backward compatibility)
     if (accessToken.startsWith('mcp_service_token_')) {
       requestLogger.info('MCP service token detected', {
         tokenPrefix: accessToken.substring(0, 20) + '...',
       })
       
-      // For MCP service tokens, return a synthetic user info
-      // In production, you might want to validate the token format or store/lookup token info
       return {
         id: 'mcp_service_user',
         email: 'mcp-service@internal',
@@ -184,45 +159,110 @@ export class OAuth2Handler {
     }
 
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      )
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})) as any
-        requestLogger.warn('Token validation failed', {
-          status: response.status,
-          error: errorData instanceof Error ? errorData : JSON.stringify(errorData),
+      // Use Google Auth Library to verify and get user info
+      this.client.setCredentials({ access_token: accessToken })
+      
+      try {
+        // Try to verify as ID token first
+        const ticket = await this.client.verifyIdToken({
+          idToken: accessToken,
+          audience: this.config.clientId,
         })
-        throw new OAuthError(
-          `Invalid or expired token: ${errorData?.error_description || response.statusText}`,
-          response.status,
-          errorData?.error
+        
+        const payload = ticket.getPayload()
+        if (payload && payload.sub) {
+          // Process ID token payload
+          if (!payload.email_verified) {
+            // Don't fall back to userinfo for ID tokens with unverified email
+            throw new Error('Email address is not verified')
+          }
+
+          requestLogger.info('Token validation successful (ID token)', {
+            userId: payload.sub,
+            email: payload.email,
+          })
+
+          return {
+            id: payload.sub,
+            email: payload.email!,
+            verified_email: payload.email_verified!,
+            name: payload.name || `${payload.given_name} ${payload.family_name}`.trim(),
+            given_name: payload.given_name || '',
+            family_name: payload.family_name || '',
+            picture: payload.picture || '',
+            locale: payload.locale || 'en',
+          }
+        }
+      } catch (idTokenError) {
+        // If error is about email verification, don't fall back
+        if (idTokenError instanceof Error && 
+            idTokenError.message.includes('Email address is not verified')) {
+          throw idTokenError
+        }
+        // Otherwise, not an ID token, fall back to userinfo endpoint
+        requestLogger.info('ID token verification failed, falling back to userinfo endpoint')
+      }
+
+      // Fall back to userinfo endpoint for access tokens
+      try {
+        const response = await fetch(
+          'https://www.googleapis.com/oauth2/v2/userinfo',
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+            },
+          }
         )
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({})) as any
+          throw new Error(`Token validation failed: ${errorData.error_description || response.statusText}`)
+        }
+
+        const userInfo = await response.json() as any
+        
+        if (!userInfo.verified_email) {
+          throw new Error('Email address is not verified')
+        }
+
+        requestLogger.info('Token validation successful (userinfo endpoint)', {
+          userId: userInfo.id,
+          email: userInfo.email,
+        })
+
+        return {
+          id: userInfo.id,
+          email: userInfo.email,
+          verified_email: userInfo.verified_email,
+          name: userInfo.name || `${userInfo.given_name || ''} ${userInfo.family_name || ''}`.trim(),
+          given_name: userInfo.given_name || '',
+          family_name: userInfo.family_name || '',
+          picture: userInfo.picture || '',
+          locale: userInfo.locale || 'en',
+        }
+      } catch (userinfoError) {
+        throw new Error(`Failed to validate access token: ${userinfoError instanceof Error ? userinfoError.message : String(userinfoError)}`)
       }
 
-      const userInfo: GoogleUserInfo = await response.json()
-      requestLogger.info('Token validation successful', {
-        userId: userInfo.id,
-        email: userInfo.email,
-        verified: userInfo.verified_email,
-      })
-
-      if (!userInfo.verified_email) {
-        throw new OAuthError('Email address is not verified', 403, 'email_not_verified')
-      }
-
-      return userInfo
     } catch (error) {
-      if (error instanceof OAuthError) throw error
-      requestLogger.error('Token validation error', { error: error instanceof Error ? error : String(error) })
-      throw new OAuthError('Failed to validate access token')
+      requestLogger.error('Token validation error', { 
+        error: error instanceof Error ? error.message : String(error) 
+      })
+      
+      // Check for specific error types and messages
+      if (error instanceof Error) {
+        if (error.message.includes('Email address is not verified') || 
+            error.message.includes('email_verified')) {
+          throw new OAuthError('Email address is not verified', 403, 'email_not_verified')
+        }
+        
+        // If it's already an OAuthError, re-throw it
+        if (error.name === 'OAuthError') {
+          throw error
+        }
+      }
+      
+      throw new OAuthError('Failed to validate access token', 401, 'invalid_token')
     }
   }
 
@@ -237,40 +277,41 @@ export class OAuth2Handler {
   }
 
   /**
-   * Middleware to authenticate requests
+   * Authenticate a request using the Authorization header
    */
-  async authenticateRequest(request: Request): Promise<{ user: GoogleUserInfo; token: string }> {
-    const requestLogger = this.authLogger.withContext({ 
-      operation: 'authenticateRequest',
-      path: new URL(request.url).pathname,
-    })
-
+  async authenticateRequest(request: Request): Promise<AuthenticationResult> {
+    const requestLogger = this.authLogger.withContext({ operation: 'authenticateRequest' })
+    
     const authHeader = request.headers.get('Authorization')
     const token = this.extractBearerToken(authHeader)
-
+    
     if (!token) {
-      requestLogger.warn('Missing authorization token')
-      throw new OAuthError('Authorization header with Bearer token is required', 401, 'missing_token')
+      requestLogger.warn('Missing or invalid authorization header')
+      throw new OAuthError('Authorization header is missing or invalid', 401, 'missing_token')
     }
 
     try {
       const user = await this.validateToken(token)
+      
       requestLogger.info('Request authenticated', {
         userId: user.id,
         email: user.email,
       })
-
+      
       return { user, token }
     } catch (error) {
-      if (error instanceof OAuthError) {
+      if (error instanceof Error && 'status' in error) {
         requestLogger.warn('Authentication failed', {
           error: error.message,
-          code: error.code,
+          code: (error as any).code,
         })
         throw error
       }
       
-      requestLogger.error('Authentication error', { error: error instanceof Error ? error : String(error) })
+      requestLogger.error('Authentication error', { 
+        error: error instanceof Error ? error : String(error) 
+      })
+      
       throw new OAuthError('Authentication failed', 500)
     }
   }

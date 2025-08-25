@@ -85,8 +85,7 @@ jest.mock('@shared/memory/storage', () => ({
 
 // Now import the worker and types
 import worker, { Env } from '../index'
-import { OAuth2Handler, OAuthError } from '@shared/auth/oauth'
-import { MCPHttpServer } from '@shared/mcp/http-server'
+import { OAuthError } from '@shared/auth/oauth'
 
 describe('MCP Server Worker', () => {
   let mockEnv: Env
