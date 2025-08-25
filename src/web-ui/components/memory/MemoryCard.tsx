@@ -2,6 +2,14 @@
 
 import { useState } from 'react'
 import { Memory } from '../../types/memory'
+import { 
+  getMemoryNamespace, 
+  getMemoryContent, 
+  truncateMemoryContent, 
+  hasMemoryLabels, 
+  getMemoryLabels, 
+  formatMemoryDate 
+} from '../../utils/memory-helpers'
 
 interface MemoryCardProps {
   memory: Memory
@@ -24,30 +32,6 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
     }
   }
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) {
-      return 'Unknown date'
-    }
-    
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) {
-      return 'Invalid date'
-    }
-    
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
-  }
-
-  const truncateContent = (content: string | undefined, maxLength: number = 200) => {
-    if (!content) return ''
-    if (content.length <= maxLength) return content
-    return content.substring(0, maxLength) + '...'
-  }
 
   const getNamespaceColor = (namespace: string | undefined) => {
     const colors = [
@@ -82,11 +66,11 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center space-x-3 flex-1 min-w-0">
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getNamespaceColor(memory.namespace)}`}>
-            {memory.namespace || 'general'}
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getNamespaceColor(getMemoryNamespace(memory))}`}>
+            {getMemoryNamespace(memory)}
           </span>
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {formatDate(memory.createdAt)}
+            {formatMemoryDate(memory)}
           </span>
         </div>
         
@@ -112,8 +96,8 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
       <div className="space-y-4">
         <div className="prose dark:prose-invert max-w-none">
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-            {showFullContent ? memory.content : truncateContent(memory.content)}
-            {memory.content && memory.content.length > 200 && (
+            {showFullContent ? getMemoryContent(memory) : truncateMemoryContent(memory)}
+            {getMemoryContent(memory).length > 200 && (
               <button
                 onClick={() => setShowFullContent(!showFullContent)}
                 className="ml-2 text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium text-sm transition-colors"
@@ -125,14 +109,14 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
         </div>
 
         {/* Labels */}
-        {memory.labels.length > 0 && (
+        {hasMemoryLabels(memory) && (
           <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
             <div className="flex items-center space-x-2">
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
               </svg>
               <div className="flex flex-wrap gap-1">
-                {memory.labels.map((label, index) => (
+                {getMemoryLabels(memory).map((label, index) => (
                   <span
                     key={index}
                     className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg text-xs"

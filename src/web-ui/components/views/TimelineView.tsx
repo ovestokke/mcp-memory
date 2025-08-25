@@ -3,6 +3,7 @@
 import { Memory, MemoryStats } from '../../types/memory'
 import { MemoryCard } from '../memory/MemoryCard'
 import { LoadingSpinner } from '../LoadingSpinner'
+import { getMemoryDateGroup, getMemoryId } from '../../utils/memory-helpers'
 
 interface TimelineViewProps {
   memories: Memory[]
@@ -28,7 +29,7 @@ export function TimelineView({
 }: TimelineViewProps) {
   // Group memories by date
   const groupedMemories = memories.reduce((groups, memory) => {
-    const date = new Date(memory.createdAt).toDateString()
+    const date = getMemoryDateGroup(memory)
     if (!groups[date]) {
       groups[date] = []
     }
@@ -137,7 +138,7 @@ export function TimelineView({
               <div className="ml-20 space-y-4">
                 {groupedMemories[date].map((memory) => (
                   <MemoryCard
-                    key={memory.id}
+                    key={getMemoryId(memory)}
                     memory={memory}
                     onDelete={() => onDeleteMemory(memory.id)}
                   />

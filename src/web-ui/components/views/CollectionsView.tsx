@@ -3,6 +3,7 @@
 import { Memory, MemoryStats } from '../../types/memory'
 import { MemoryCard } from '../memory/MemoryCard'
 import { LoadingSpinner } from '../LoadingSpinner'
+import { getMemoryNamespace, truncateMemoryContent, getMemoryId } from '../../utils/memory-helpers'
 
 interface CollectionsViewProps {
   memories: Memory[]
@@ -31,10 +32,11 @@ export function CollectionsView({
 }: CollectionsViewProps) {
   // Group memories by namespace
   const groupedMemories = memories.reduce((groups, memory) => {
-    if (!groups[memory.namespace]) {
-      groups[memory.namespace] = []
+    const namespace = getMemoryNamespace(memory)
+    if (!groups[namespace]) {
+      groups[namespace] = []
     }
-    groups[memory.namespace].push(memory)
+    groups[namespace].push(memory)
     return groups
   }, {} as Record<string, Memory[]>)
 
@@ -173,8 +175,8 @@ export function CollectionsView({
                         Recent Memories
                       </p>
                       {recentMemories.map((memory) => (
-                        <div key={memory.id} className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-                          {memory.content.substring(0, 80)}...
+                        <div key={getMemoryId(memory)} className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
+                          {truncateMemoryContent(memory, 80) || 'No content'}
                         </div>
                       ))}
                     </div>

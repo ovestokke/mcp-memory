@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Memory } from '../../types/memory'
 import { LoadingSpinner } from '../LoadingSpinner'
+import { getMemoryNamespace, getMemoryContentDisplay, formatMemoryDate, hasMemoryLabels, getMemoryLabels, getMemoryId, getMemoryContent } from '../../utils/memory-helpers'
 
 interface MemoryListProps {
   memories: Memory[]
@@ -50,19 +51,19 @@ export function MemoryList({ memories, loading, onDelete }: MemoryListProps) {
   return (
     <div className="divide-y divide-gray-200 dark:divide-gray-700">
       {memories.map((memory) => (
-        <div key={memory.id} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-750 transition-colors">
+        <div key={getMemoryId(memory)} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-750 transition-colors">
           <div className="flex justify-between items-start mb-3">
             <div className="flex items-center space-x-2">
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400">
-                {memory.namespace}
+                {getMemoryNamespace(memory)}
               </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(memory.createdAt)}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{formatMemoryDate(memory)}</span>
             </div>
             <button
               onClick={() => handleDelete(memory.id)}
               disabled={deletingId === memory.id}
               className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
-              aria-label={`Delete memory: ${memory.content.substring(0, 50)}...`}
+              aria-label={`Delete memory: ${getMemoryContent(memory).substring(0, 50)}...`}
             >
               {deletingId === memory.id ? (
                 <LoadingSpinner size="sm" className="border-red-300 border-t-red-600" />
@@ -79,11 +80,11 @@ export function MemoryList({ memories, loading, onDelete }: MemoryListProps) {
             </button>
           </div>
 
-          <p className="text-gray-900 dark:text-white mb-3 leading-relaxed">{memory.content}</p>
+          <p className="text-gray-900 dark:text-white mb-3 leading-relaxed">{getMemoryContentDisplay(memory)}</p>
 
-          {memory.labels.length > 0 && (
+          {hasMemoryLabels(memory) && (
             <div className="flex flex-wrap gap-1">
-              {memory.labels.map((label, index) => (
+              {getMemoryLabels(memory).map((label, index) => (
                 <span
                   key={index}
                   className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-300"
