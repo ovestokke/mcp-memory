@@ -43,7 +43,8 @@ export function MemoryCard({ memory, onDelete }: MemoryCardProps) {
     }).format(date)
   }
 
-  const truncateContent = (content: string, maxLength: number = 200) => {
+  const truncateContent = (content: string | undefined, maxLength: number = 200) => {
+    if (!content) return ''
     if (content.length <= maxLength) return content
     return content.substring(0, maxLength) + '...'
   }
