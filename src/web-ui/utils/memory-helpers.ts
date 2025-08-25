@@ -58,7 +58,9 @@ export function formatMemoryDate(memory: Memory): string {
     return 'Unknown date'
   }
   
-  const date = new Date(memory.createdAt)
+  // Handle both Date objects and ISO strings from API
+  const date = memory.createdAt instanceof Date ? memory.createdAt : new Date(memory.createdAt)
+  
   if (isNaN(date.getTime())) {
     return 'Invalid date'
   }

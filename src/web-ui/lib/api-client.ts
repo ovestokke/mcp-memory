@@ -1,10 +1,22 @@
 // Centralized API client for memory operations using the new shared client
 import { createWebUIMemoryClient, MemoryApiClient } from '@shared/api/memory-client'
-import type { Memory, MemorySearchResult } from '@shared/memory/types'
-import type { MemoryFormData } from '../types/memory'
+import type { Memory as SharedMemory, MemorySearchResult } from '@shared/memory/types'
+import type { Memory, MemoryFormData } from '../types/memory'
 
 // Create the default memory API client instance
 export const memoryApi = createWebUIMemoryClient()
+
+// Convert shared Memory (with Date fields) to web UI Memory (with string fields)
+function convertMemoryForUI(sharedMemory: SharedMemory): Memory {
+  return {
+    id: sharedMemory.id,
+    content: sharedMemory.content,
+    namespace: sharedMemory.namespace,
+    labels: sharedMemory.labels,
+    createdAt: sharedMemory.createdAt.toISOString(),
+    updatedAt: sharedMemory.updatedAt.toISOString(),
+  }
+}
 
 // Legacy wrapper for backward compatibility
 export class LegacyMemoryApiClient {
@@ -12,7 +24,8 @@ export class LegacyMemoryApiClient {
 
   async getMemories(): Promise<Memory[]> {
     try {
-      return await this.client.getMemories()
+      const memories = await this.client.getMemories()
+      return memories.map(convertMemoryForUI)
     } catch (error) {
       console.error('Failed to get memories:', error)
       return []
@@ -38,8 +51,8 @@ export class LegacyMemoryApiClient {
         ...(namespace && namespace !== 'all' ? { namespace } : {}),
       })
       
-      // Extract just the memory objects from search results
-      return results.map(result => result.memory)
+      // Extract memory objects and convert dates for UI
+      return results.map(result => convertMemoryForUI(result.memory))
     } catch (error) {
       console.error('Failed to search memories:', error)
       return []
