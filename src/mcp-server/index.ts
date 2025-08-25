@@ -1,7 +1,7 @@
 import { MemoryStorage } from '@shared/memory/storage'
 import { MemoryStorageClient } from '@shared/memory/client'
 import { OAuth2Handler, OAuthError, GoogleOAuthConfig } from '@shared/auth/oauth'
-import { MCPHttpServer } from '@shared/mcp/http-server'
+import { HttpMCPMemoryServer } from '@shared/mcp/http-memory-server'
 import { logger } from '@shared/utils/logger'
 
 export interface Env {
@@ -443,10 +443,15 @@ export default {
             }
           }
 
-          if (body.grant_type !== 'authorization_code') {
+          // Support authorization_code (for web), client_credentials (for MCP clients), and refresh_token (for token refresh)
+          if (body.grant_type !== 'authorization_code' && body.grant_type !== 'client_credentials' && body.grant_type !== 'refresh_token') {
+            requestLogger.error('Unsupported grant type received', {
+              grantType: body.grant_type,
+              allParams: body,
+            })
             return new Response(JSON.stringify({
               error: 'unsupported_grant_type',
-              error_description: 'Only authorization_code grant type is supported'
+              error_description: `Grant type '${body.grant_type}' is not supported. Supported types: authorization_code, client_credentials, refresh_token`
             }), {
               status: 400,
               headers: {
@@ -456,50 +461,102 @@ export default {
             })
           }
 
-          if (!body.code) {
-            return new Response(JSON.stringify({
-              error: 'invalid_request',
-              error_description: 'Missing required parameter: code'
-            }), {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            })
-          }
-
-          requestLogger.info('MCP token exchange attempt', {
+          requestLogger.info('Token exchange attempt', {
             clientId: body.client_id,
-            codeLength: body.code?.length || 0,
             grantType: body.grant_type,
             redirectUri: body.redirect_uri,
           })
 
-          // Exchange the authorization code for tokens with Google
-          const tokenResponse = await oauth.exchangeCodeForToken(body.code)
-          const userInfo = await oauth.validateToken(tokenResponse.access_token)
+          // Handle different grant types
+          if (body.grant_type === 'client_credentials') {
+            // Client credentials flow for MCP clients (machine-to-machine)
+            // For development, we'll create a service account token
+            // In production, this should verify client_id/client_secret
+            
+            requestLogger.info('Client credentials flow for MCP client', {
+              clientId: body.client_id,
+            })
 
-          requestLogger.info('MCP client token exchange successful', {
-            clientId: body.client_id,
-            userId: userInfo.id,
-            email: userInfo.email,
-          })
+            // For MCP clients, create a service token without Google OAuth
+            // This represents the MCP client itself, not a specific user
+            const serviceToken = 'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
+            
+            return new Response(JSON.stringify({
+              access_token: serviceToken,
+              token_type: 'Bearer',
+              expires_in: 3600,
+              scope: 'mcp_tools',
+            }), {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+              },
+            })
+          } else if (body.grant_type === 'authorization_code') {
+            // Authorization code flow for web browsers
+            if (!body.code) {
+              return new Response(JSON.stringify({
+                error: 'invalid_request',
+                error_description: 'Missing required parameter: code'
+              }), {
+                status: 400,
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
+                },
+              })
+            }
 
-          // Return tokens to MCP client
-          return new Response(JSON.stringify({
-            access_token: tokenResponse.access_token,
-            token_type: 'Bearer',
-            expires_in: tokenResponse.expires_in,
-            refresh_token: tokenResponse.refresh_token,
-            scope: 'openid email profile',
-          }), {
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
-            },
-          })
+            // Exchange the authorization code for tokens with Google
+            const tokenResponse = await oauth.exchangeCodeForToken(body.code)
+            const userInfo = await oauth.validateToken(tokenResponse.access_token)
+
+            requestLogger.info('Authorization code flow successful', {
+              clientId: body.client_id,
+              userId: userInfo.id,
+              email: userInfo.email,
+            })
+
+            // Return tokens to client
+            return new Response(JSON.stringify({
+              access_token: tokenResponse.access_token,
+              token_type: 'Bearer',
+              expires_in: tokenResponse.expires_in,
+              refresh_token: tokenResponse.refresh_token,
+              scope: 'openid email profile',
+            }), {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+              },
+            })
+          } else if (body.grant_type === 'refresh_token') {
+            // Refresh token flow - for MCP clients that need to refresh their tokens
+            // For development/testing, we'll just issue a new service token
+            // In production, you might want to validate the refresh token
+            
+            requestLogger.info('Refresh token flow for MCP client', {
+              clientId: body.client_id,
+            })
+
+            // For MCP clients, create a new service token
+            const serviceToken = 'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
+            
+            return new Response(JSON.stringify({
+              access_token: serviceToken,
+              token_type: 'Bearer',
+              expires_in: 3600,
+              scope: 'mcp_tools',
+            }), {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+              },
+            })
+          }
         } catch (error) {
           requestLogger.error('MCP token exchange failed', {
             error: error instanceof Error ? error.message : String(error),
@@ -545,11 +602,14 @@ export default {
         const durableObject = env.MEMORY_STORAGE.get(id)
         const memoryStorageClient = new MemoryStorageClient(durableObject)
 
-        // Initialize MCP HTTP server
-        const mcpServer = new MCPHttpServer(memoryStorageClient)
+        // Initialize HTTP-enabled MCP server using official SDK
+        const mcpServer = new HttpMCPMemoryServer(
+          { name: 'MCP Memory Server', version: '1.0.0' },
+          memoryStorageClient
+        )
         mcpServer.setCurrentUser(authenticatedUser.id)
 
-        // Handle MCP protocol over HTTP
+        // Handle MCP protocol over HTTP using official SDK
         const mcpResponse = await mcpServer.handleRequest(request)
 
         // Add CORS headers

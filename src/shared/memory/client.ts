@@ -1,12 +1,16 @@
 import { Memory, Namespace, MemorySearchOptions, MemorySearchResult } from './types'
+import { createDurableObjectMemoryClient } from '../api/memory-client'
 
 /**
- * Client for interacting with the MemoryStorage Durable Object
+ * Legacy client for interacting with the MemoryStorage Durable Object
+ * 
+ * This class is now a wrapper around the new centralized MemoryApiClient
+ * to maintain backward compatibility while consolidating HTTP logic.
  */
 export class MemoryStorageClient {
   private durableObject: DurableObjectStub
   
-  constructor(durableObject: DurableObjectStub) {
+  constructor(durableObject: DurableObjectStub, _userId?: string) {
     this.durableObject = durableObject
   }
 
@@ -16,82 +20,38 @@ export class MemoryStorageClient {
     namespace?: string
     labels?: string[]
   }): Promise<Memory> {
-    const response = await this.durableObject.fetch('http://localhost/api/memories', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': params.userId,
-      },
-      body: JSON.stringify({
-        content: params.content,
-        namespace: params.namespace || 'general',
-        labels: params.labels || [],
-      }),
+    // Create a client with the correct userId for this request
+    const client = createDurableObjectMemoryClient(this.durableObject, params.userId)
+    
+    return client.storeMemory({
+      content: params.content,
+      ...(params.namespace && { namespace: params.namespace }),
+      ...(params.labels && { labels: params.labels }),
     })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to store memory: ${error}`)
-    }
-
-    return response.json()
   }
 
   async searchMemories(userId: string, options: MemorySearchOptions): Promise<MemorySearchResult[]> {
-    const searchParams = new URLSearchParams()
+    const client = createDurableObjectMemoryClient(this.durableObject, userId)
     
-    if (options.query) searchParams.set('query', options.query)
-    if (options.namespace) searchParams.set('namespace', options.namespace)
-    if (options.labels) searchParams.set('labels', options.labels.join(','))
-    if (options.limit) searchParams.set('limit', options.limit.toString())
-    if (options.similarityThreshold) searchParams.set('similarity_threshold', options.similarityThreshold.toString())
-
-    const response = await this.durableObject.fetch(`http://localhost/api/search?${searchParams}`, {
-      method: 'POST',
-      headers: {
-        'x-user-id': userId,
-      },
+    return client.searchMemories({
+      ...(options.query && { query: options.query }),
+      ...(options.namespace && { namespace: options.namespace }),
+      ...(options.labels && { labels: options.labels }),
+      ...(options.limit && { limit: options.limit }),
+      ...(options.similarityThreshold && { similarity_threshold: options.similarityThreshold }),
     })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to search memories: ${error}`)
-    }
-
-    return response.json()
   }
 
   async listMemories(userId: string, namespace?: string): Promise<Memory[]> {
-    const searchParams = new URLSearchParams()
-    if (namespace) searchParams.set('namespace', namespace)
-
-    const response = await this.durableObject.fetch(`http://localhost/api/memories?${searchParams}`, {
-      method: 'GET',
-      headers: {
-        'x-user-id': userId,
-      },
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to list memories: ${error}`)
-    }
-
-    return response.json()
+    const client = createDurableObjectMemoryClient(this.durableObject, userId)
+    
+    return client.getMemories(namespace)
   }
 
   async deleteMemory(userId: string, memoryId: string): Promise<void> {
-    const response = await this.durableObject.fetch(`http://localhost/api/memories/${memoryId}`, {
-      method: 'DELETE',
-      headers: {
-        'x-user-id': userId,
-      },
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to delete memory: ${error}`)
-    }
+    const client = createDurableObjectMemoryClient(this.durableObject, userId)
+    
+    return client.deleteMemory(memoryId)
   }
 
   async createNamespace(params: {
@@ -99,36 +59,19 @@ export class MemoryStorageClient {
     name: string
     description?: string
   }): Promise<Namespace> {
-    const response = await this.durableObject.fetch('http://localhost/api/namespaces', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': params.userId,
-      },
-      body: JSON.stringify({
-        name: params.name,
-        description: params.description,
-      }),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to create namespace: ${error}`)
-    }
-
-    return response.json()
+    const client = createDurableObjectMemoryClient(this.durableObject, params.userId)
+    
+    return client.createNamespace(params.name, params.description)
   }
 
   async listNamespaces(): Promise<Namespace[]> {
-    const response = await this.durableObject.fetch('http://localhost/api/namespaces', {
-      method: 'GET',
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Failed to list namespaces: ${error}`)
-    }
-
-    return response.json()
+    // For this method we don't need userId, so we can use a dummy one
+    const client = createDurableObjectMemoryClient(this.durableObject, 'system')
+    return client.getNamespaces()
   }
+}
+
+// Factory function for creating storage clients
+export const createMemoryStorageClient = (durableObject: DurableObjectStub, userId?: string): MemoryStorageClient => {
+  return new MemoryStorageClient(durableObject, userId)
 }

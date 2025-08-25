@@ -163,6 +163,26 @@ export class OAuth2Handler {
   async validateToken(accessToken: string): Promise<GoogleUserInfo> {
     const requestLogger = this.authLogger.withContext({ operation: 'validateToken' })
 
+    // Check if this is an MCP service token
+    if (accessToken.startsWith('mcp_service_token_')) {
+      requestLogger.info('MCP service token detected', {
+        tokenPrefix: accessToken.substring(0, 20) + '...',
+      })
+      
+      // For MCP service tokens, return a synthetic user info
+      // In production, you might want to validate the token format or store/lookup token info
+      return {
+        id: 'mcp_service_user',
+        email: 'mcp-service@internal',
+        verified_email: true,
+        name: 'MCP Service',
+        given_name: 'MCP',
+        family_name: 'Service',
+        picture: '',
+        locale: 'en'
+      }
+    }
+
     try {
       const response = await fetch(
         `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`,

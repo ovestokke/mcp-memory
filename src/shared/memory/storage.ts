@@ -29,6 +29,10 @@ export class MemoryStorage {
             return await this.handleListMemories(request)
           case 'POST /search':
             return await this.handleSearchMemories(request)
+          case 'POST /namespaces':
+            return await this.handleCreateNamespace(request)
+          case 'GET /namespaces':
+            return await this.handleListNamespaces()
           default:
             // Check for DELETE /api/memories/{id}
             const deleteMatch = apiPath.match(/^\/memories\/([^\/]+)$/)

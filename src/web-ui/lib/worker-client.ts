@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
-import { authOptions } from '../app/api/auth/[...nextauth]/route'
+import { authOptions } from './auth-config'
 
 const WORKER_URL = process.env.WORKER_URL || 'http://localhost:8787'
 
