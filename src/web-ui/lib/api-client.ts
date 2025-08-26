@@ -47,9 +47,19 @@ class WebUIMemoryApiClient {
   }
 }
 
-// Create and export the single API client instance
-const sharedClient = createWebUIMemoryClient()
-export const memoryApi = new WebUIMemoryApiClient(sharedClient)
+// Create API client instance factory
+function createMemoryApiClient(onAuthError?: () => void): WebUIMemoryApiClient {
+  const sharedClient = createWebUIMemoryClient(onAuthError)
+  return new WebUIMemoryApiClient(sharedClient)
+}
+
+// Default client instance (will be recreated with auth handler)
+export let memoryApi = createMemoryApiClient()
+
+// Function to set the auth error handler and recreate the client
+export function setAuthErrorHandler(onAuthError: () => void): void {
+  memoryApi = createMemoryApiClient(onAuthError)
+}
 
 // Re-export types for convenience
 export type { Memory, MemoryFormData }

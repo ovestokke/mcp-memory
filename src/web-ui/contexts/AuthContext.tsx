@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { signIn, signOut, useSession } from 'next-auth/react'
 import { clientLogger } from '../utils/logger'
+import { setAuthErrorHandler } from '../lib/api-client'
 
 export interface User {
   id: string
@@ -48,6 +49,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   } : null
 
   const loading = status === 'loading'
+
+  // Set up automatic logout on 401 errors
+  useEffect(() => {
+    const handleAuthError = () => {
+      clientLogger.warn('Authentication error detected, logging out user')
+      signOut({ redirect: false }).catch((err) => {
+        clientLogger.error('Failed to sign out after auth error', { error: err })
+      })
+    }
+
+    setAuthErrorHandler(handleAuthError)
+  }, [])
 
   const loginWithGoogle = async () => {
     try {

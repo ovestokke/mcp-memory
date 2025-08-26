@@ -220,11 +220,12 @@ export const createDurableObjectMemoryClient = (durableObject: DurableObjectStub
 /**
  * Create memory client for web UI (via Next.js API routes)
  */
-export const createWebUIMemoryClient = (): MemoryApiClient => {
+export const createWebUIMemoryClient = (onAuthError?: () => void): MemoryApiClient => {
   const apiClient = new ApiClient({
     baseUrl: '/api',
     timeout: 10000,
     retries: 2,
+    onAuthError,
   });
 
   return new MemoryApiClient(apiClient);

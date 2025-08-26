@@ -9,6 +9,7 @@ export interface ApiClientConfig {
     token: string;
   } | undefined;
   headers?: Record<string, string> | undefined;
+  onAuthError?: () => void | undefined;
 }
 
 export interface ApiError extends Error {
@@ -32,9 +33,11 @@ export class ApiClient {
   private http: KyInstance;
   private apiLogger: typeof logger;
   private baseUrl: string;
+  private onAuthError?: () => void;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl;
+    this.onAuthError = config.onAuthError;
     this.apiLogger = logger.withContext({ 
       component: 'ApiClient',
       baseUrl: config.baseUrl,
@@ -85,6 +88,12 @@ export class ApiClient {
               statusText: error.response?.statusText,
               message: error.message,
             });
+
+            // Handle 401 authentication errors
+            if (error.response?.status === 401 && this.onAuthError) {
+              this.apiLogger.warn('Authentication error detected, calling auth error handler');
+              this.onAuthError();
+            }
 
             // For ky, we need to return the original error or a modified HTTPError
             // We can't return a custom ApiError type here
@@ -165,6 +174,7 @@ export class ApiClient {
       retries: config.retries || undefined,
       auth: config.auth || undefined,
       headers: config.headers || undefined,
+      onAuthError: config.onAuthError || this.onAuthError,
     });
   }
 
