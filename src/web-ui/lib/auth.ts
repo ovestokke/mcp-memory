@@ -140,7 +140,7 @@ export const clientAuth = {
     })
     
     if (!response.ok) {
-      const error = await response.json()
+      const error = await response.json() as { message?: string; code?: string }
       throw new AuthError(error.message || 'Google login failed', error.code || 'GOOGLE_LOGIN_FAILED')
     }
     

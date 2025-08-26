@@ -8,7 +8,7 @@ export interface WorkerClientOptions {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   path: string
   body?: unknown
-  headers?: Record<string, string>
+  headers?: Record<string, string> | undefined
 }
 
 export class AuthenticatedWorkerClient {
@@ -52,7 +52,7 @@ export class AuthenticatedWorkerClient {
       const response = await fetch(`${WORKER_URL}${options.path}`, {
         method: options.method,
         headers,
-        ...(options.body && { body: JSON.stringify(options.body) }),
+        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       })
 
       // Handle non-OK responses

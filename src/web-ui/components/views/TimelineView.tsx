@@ -129,14 +129,14 @@ export function TimelineView({
                     })}
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
-                    {groupedMemories[date].length} {groupedMemories[date].length === 1 ? 'memory' : 'memories'}
+                    {groupedMemories[date]!.length} {groupedMemories[date]!.length === 1 ? 'memory' : 'memories'}
                   </p>
                 </div>
               </div>
 
               {/* Memories for this date */}
               <div className="ml-20 space-y-4">
-                {groupedMemories[date].map((memory) => (
+                {groupedMemories[date]!.map((memory) => (
                   <MemoryCard
                     key={getMemoryId(memory)}
                     memory={memory}

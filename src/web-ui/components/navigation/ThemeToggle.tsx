@@ -41,7 +41,7 @@ export function ThemeToggle({ collapsed = false }: ThemeToggleProps) {
     }
   ]
 
-  const currentOption = themeOptions.find(option => option.value === theme) || themeOptions[2]
+  const currentOption = themeOptions.find(option => option.value === theme) ?? themeOptions[2]!
 
   if (collapsed) {
     return (

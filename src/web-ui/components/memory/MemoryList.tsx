@@ -25,9 +25,6 @@ export function MemoryList({ memories, loading, onDelete }: MemoryListProps) {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
-  }
 
   if (loading) {
     return (
