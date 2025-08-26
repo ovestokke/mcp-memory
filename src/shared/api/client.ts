@@ -9,7 +9,7 @@ export interface ApiClientConfig {
     token: string;
   } | undefined;
   headers?: Record<string, string> | undefined;
-  onAuthError?: () => void | undefined;
+  onAuthError?: (() => void) | undefined;
 }
 
 export interface ApiError extends Error {
@@ -33,7 +33,7 @@ export class ApiClient {
   private http: KyInstance;
   private apiLogger: typeof logger;
   private baseUrl: string;
-  private onAuthError?: () => void;
+  private onAuthError?: (() => void) | undefined;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl;

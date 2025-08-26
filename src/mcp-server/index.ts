@@ -17,13 +17,12 @@ export interface Env {
 // Export the Durable Object class
 export { MemoryStorage }
 
-
 // Helper function to create CORS headers for authenticated endpoints
 function createCorsHeaders(origin?: string): Record<string, string> {
   // In production, restrict to specific origins. For development, allow localhost.
   const allowedOrigins = [
     'https://your-app.com', // Replace with your actual domain
-    'http://localhost:3002', // Development web UI
+    'http://localhost:3000', // Development web UI
   ]
 
   const requestOrigin = origin || ''
@@ -49,7 +48,9 @@ function handleOAuthError(error: unknown, origin?: string, serverUrl?: string): 
 
     // Add WWW-Authenticate header for 401 responses per MCP spec
     if (error.status === 401 && serverUrl) {
-      headers['WWW-Authenticate'] = `Bearer realm="${serverUrl}", error="invalid_token", error_description="${error.message}"`
+      headers[
+        'WWW-Authenticate'
+      ] = `Bearer realm="${serverUrl}", error="invalid_token", error_description="${error.message}"`
     }
 
     return new Response(
@@ -107,11 +108,11 @@ export default {
           token_endpoint: `${baseUrl}/token`,
           registration_endpoint: `${baseUrl}/register`,
           jwks_uri: `${baseUrl}/.well-known/jwks.json`,
-          response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code", "refresh_token"],
-          scopes_supported: ["openid", "email", "profile"],
-          code_challenge_methods_supported: ["S256"],
-          authorization_response_iss_parameter_supported: true
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          scopes_supported: ['openid', 'email', 'profile'],
+          code_challenge_methods_supported: ['S256'],
+          authorization_response_iss_parameter_supported: true,
         }
 
         return new Response(JSON.stringify(metadata), {
@@ -132,13 +133,13 @@ export default {
           token_endpoint: `${baseUrl}/token`,
           registration_endpoint: `${baseUrl}/register`,
           jwks_uri: `${baseUrl}/.well-known/jwks.json`,
-          response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code", "refresh_token"],
-          scopes_supported: ["openid", "email", "profile"],
-          code_challenge_methods_supported: ["S256"],
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          scopes_supported: ['openid', 'email', 'profile'],
+          code_challenge_methods_supported: ['S256'],
           authorization_response_iss_parameter_supported: true,
-          subject_types_supported: ["public"],
-          id_token_signing_alg_values_supported: ["RS256"]
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
         }
 
         return new Response(JSON.stringify(metadata), {
@@ -156,9 +157,9 @@ export default {
         const metadata = {
           resource: baseUrl,
           authorization_servers: [baseUrl],
-          scopes_supported: ["openid", "email", "profile"],
-          bearer_methods_supported: ["header"],
-          resource_documentation: `${baseUrl}/docs`
+          scopes_supported: ['openid', 'email', 'profile'],
+          bearer_methods_supported: ['header'],
+          resource_documentation: `${baseUrl}/docs`,
         }
 
         return new Response(JSON.stringify(metadata), {
@@ -184,7 +185,7 @@ export default {
       // RFC 7591 Dynamic Client Registration endpoint (public)
       if (url.pathname === '/register' && request.method === 'POST') {
         try {
-          const clientData = await request.json() as any
+          const clientData = (await request.json()) as any
 
           // Generate a simple client ID for this registration
           const clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
@@ -197,7 +198,7 @@ export default {
             client_secret_expires_at: 0, // Never expires for demo
             registration_access_token: `registration_${Math.random().toString(36).substring(2, 34)}`,
             registration_client_uri: `${url.protocol}//${url.host}/register/${clientId}`,
-            ...clientData // Echo back the client metadata
+            ...clientData, // Echo back the client metadata
           }
 
           return new Response(JSON.stringify(response), {
@@ -208,16 +209,19 @@ export default {
             },
           })
         } catch (error) {
-          return new Response(JSON.stringify({
-            error: 'invalid_request',
-            error_description: 'Invalid client metadata'
-          }), {
-            status: 400,
-            headers: {
-              'Content-Type': 'application/json',
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
+          return new Response(
+            JSON.stringify({
+              error: 'invalid_request',
+              error_description: 'Invalid client metadata',
+            }),
+            {
+              status: 400,
+              headers: {
+                'Content-Type': 'application/json',
+                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+              },
             },
-          })
+          )
         }
       }
 
@@ -252,7 +256,7 @@ export default {
           return new Response(null, {
             status: 302,
             headers: {
-              'Location': authUrl,
+              Location: authUrl,
               ...createCorsHeaders(request.headers.get('Origin') || undefined),
             },
           })
@@ -287,7 +291,7 @@ export default {
             state = url.searchParams.get('state')
           } else {
             // POST request with JSON body
-            const body = (await request.json()) as { code: string, state?: string }
+            const body = (await request.json()) as { code: string; state?: string }
             code = body.code
             state = body.state || null
           }
@@ -337,7 +341,7 @@ export default {
             return new Response(null, {
               status: 302,
               headers: {
-                'Location': redirectUrl.toString(),
+                Location: redirectUrl.toString(),
                 ...createCorsHeaders(request.headers.get('Origin') || undefined),
               },
             })
@@ -409,7 +413,11 @@ export default {
           requestLogger.error('OAuth callback failed', {
             error: error instanceof Error ? error : String(error),
           })
-          return handleOAuthError(error, request.headers.get('Origin') || undefined, `${url.protocol}//${url.host}`)
+          return handleOAuthError(
+            error,
+            request.headers.get('Origin') || undefined,
+            `${url.protocol}//${url.host}`,
+          )
         }
       }
 
@@ -442,7 +450,7 @@ export default {
             }
           } else {
             // Parse JSON data
-            body = await request.json() as {
+            body = (await request.json()) as {
               grant_type: string
               code: string
               redirect_uri?: string
@@ -452,21 +460,28 @@ export default {
           }
 
           // Support authorization_code (for web), client_credentials (for MCP clients), and refresh_token (for token refresh)
-          if (body.grant_type !== 'authorization_code' && body.grant_type !== 'client_credentials' && body.grant_type !== 'refresh_token') {
+          if (
+            body.grant_type !== 'authorization_code' &&
+            body.grant_type !== 'client_credentials' &&
+            body.grant_type !== 'refresh_token'
+          ) {
             requestLogger.error('Unsupported grant type received', {
               grantType: body.grant_type,
               allParams: body,
             })
-            return new Response(JSON.stringify({
-              error: 'unsupported_grant_type',
-              error_description: `Grant type '${body.grant_type}' is not supported. Supported types: authorization_code, client_credentials, refresh_token`
-            }), {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+            return new Response(
+              JSON.stringify({
+                error: 'unsupported_grant_type',
+                error_description: `Grant type '${body.grant_type}' is not supported. Supported types: authorization_code, client_credentials, refresh_token`,
+              }),
+              {
+                status: 400,
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
+                },
               },
-            })
+            )
           }
 
           requestLogger.info('Token exchange attempt', {
@@ -480,40 +495,47 @@ export default {
             // Client credentials flow for MCP clients (machine-to-machine)
             // For development, we'll create a service account token
             // In production, this should verify client_id/client_secret
-            
+
             requestLogger.info('Client credentials flow for MCP client', {
               clientId: body.client_id,
             })
 
             // For MCP clients, create a service token without Google OAuth
             // This represents the MCP client itself, not a specific user
-            const serviceToken = 'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
-            
-            return new Response(JSON.stringify({
-              access_token: serviceToken,
-              token_type: 'Bearer',
-              expires_in: 3600,
-              scope: 'mcp_tools',
-            }), {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            })
-          } else if (body.grant_type === 'authorization_code') {
-            // Authorization code flow for web browsers
-            if (!body.code) {
-              return new Response(JSON.stringify({
-                error: 'invalid_request',
-                error_description: 'Missing required parameter: code'
-              }), {
-                status: 400,
+            const serviceToken =
+              'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
+
+            return new Response(
+              JSON.stringify({
+                access_token: serviceToken,
+                token_type: 'Bearer',
+                expires_in: 3600,
+                scope: 'mcp_tools',
+              }),
+              {
+                status: 200,
                 headers: {
                   'Content-Type': 'application/json',
                   ...createCorsHeaders(request.headers.get('Origin') || undefined),
                 },
-              })
+              },
+            )
+          } else if (body.grant_type === 'authorization_code') {
+            // Authorization code flow for web browsers
+            if (!body.code) {
+              return new Response(
+                JSON.stringify({
+                  error: 'invalid_request',
+                  error_description: 'Missing required parameter: code',
+                }),
+                {
+                  status: 400,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...createCorsHeaders(request.headers.get('Origin') || undefined),
+                  },
+                },
+              )
             }
 
             // Exchange the authorization code for tokens with Google
@@ -527,59 +549,69 @@ export default {
             })
 
             // Return tokens to client
-            return new Response(JSON.stringify({
-              access_token: tokenResponse.access_token,
-              token_type: 'Bearer',
-              expires_in: tokenResponse.expires_in,
-              refresh_token: tokenResponse.refresh_token,
-              scope: 'openid email profile',
-            }), {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+            return new Response(
+              JSON.stringify({
+                access_token: tokenResponse.access_token,
+                token_type: 'Bearer',
+                expires_in: tokenResponse.expires_in,
+                refresh_token: tokenResponse.refresh_token,
+                scope: 'openid email profile',
+              }),
+              {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
+                },
               },
-            })
+            )
           } else if (body.grant_type === 'refresh_token') {
             // Refresh token flow - for MCP clients that need to refresh their tokens
             // For development/testing, we'll just issue a new service token
             // In production, you might want to validate the refresh token
-            
+
             requestLogger.info('Refresh token flow for MCP client', {
               clientId: body.client_id,
             })
 
             // For MCP clients, create a new service token
-            const serviceToken = 'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
-            
-            return new Response(JSON.stringify({
-              access_token: serviceToken,
-              token_type: 'Bearer',
-              expires_in: 3600,
-              scope: 'mcp_tools',
-            }), {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+            const serviceToken =
+              'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
+
+            return new Response(
+              JSON.stringify({
+                access_token: serviceToken,
+                token_type: 'Bearer',
+                expires_in: 3600,
+                scope: 'mcp_tools',
+              }),
+              {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
+                },
               },
-            })
+            )
           }
         } catch (error) {
           requestLogger.error('MCP token exchange failed', {
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
           })
-          return new Response(JSON.stringify({
-            error: 'invalid_grant',
-            error_description: 'The provided authorization grant is invalid'
-          }), {
-            status: 400,
-            headers: {
-              'Content-Type': 'application/json',
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
+          return new Response(
+            JSON.stringify({
+              error: 'invalid_grant',
+              error_description: 'The provided authorization grant is invalid',
+            }),
+            {
+              status: 400,
+              headers: {
+                'Content-Type': 'application/json',
+                ...createCorsHeaders(request.headers.get('Origin') || undefined),
+              },
             },
-          })
+          )
         }
       }
 
@@ -600,7 +632,11 @@ export default {
           email: authenticatedUser.email,
         })
       } catch (error) {
-        return handleOAuthError(error, request.headers.get('Origin') || undefined, `${url.protocol}//${url.host}`)
+        return handleOAuthError(
+          error,
+          request.headers.get('Origin') || undefined,
+          `${url.protocol}//${url.host}`,
+        )
       }
 
       // MCP protocol handling (protected)
@@ -613,7 +649,7 @@ export default {
         // Initialize HTTP-enabled MCP server using official SDK
         const mcpServer = new HttpMCPMemoryServer(
           { name: 'MCP Memory Server', version: '1.0.0' },
-          memoryStorageClient
+          memoryStorageClient,
         )
         mcpServer.setCurrentUser(authenticatedUser.id)
 
@@ -634,13 +670,13 @@ export default {
       requestLogger.info('API request with authenticated user', {
         userId,
         email: authenticatedUser.email,
-        path: url.pathname
+        path: url.pathname,
       })
       const id = env.MEMORY_STORAGE.idFromName(userId)
       requestLogger.info('Using Durable Object', {
         userId,
         durableObjectId: id.toString(),
-        path: url.pathname
+        path: url.pathname,
       })
       const durableObject = env.MEMORY_STORAGE.get(id)
 

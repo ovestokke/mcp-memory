@@ -93,10 +93,14 @@ export default function Home() {
   const calculateStats = () => {
     const uniqueNamespaces = new Set(memories.map(m => m.namespace)).size
     const now = new Date()
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    const recentlyAdded = memories.filter(m => 
-      new Date(m.createdAt) > oneDayAgo
-    ).length
+    
+    // Calculate start of today in user's timezone (00:00:00 today)
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    
+    const recentlyAdded = memories.filter(m => {
+      const memoryDate = new Date(m.createdAt)
+      return memoryDate >= todayStart && memoryDate <= now
+    }).length
 
     setStats({
       total: memories.length,
