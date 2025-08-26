@@ -44,8 +44,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const user: User | null = session?.user ? {
     id: session.user.id || '',
     email: session.user.email || '',
-    name: session.user.name,
-    picture: session.user.image
+    name: session.user.name || null,
+    picture: session.user.image || null
   } : null
 
   const loading = status === 'loading'
