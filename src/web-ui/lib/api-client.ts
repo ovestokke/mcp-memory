@@ -1,10 +1,7 @@
-// Centralized API client for memory operations using the new shared client
+// Clean API client for memory operations
 import { createWebUIMemoryClient, MemoryApiClient } from '@shared/api/memory-client'
-import type { Memory as SharedMemory, MemorySearchResult } from '@shared/memory/types'
+import type { Memory as SharedMemory } from '@shared/memory/types'
 import type { Memory, MemoryFormData } from '../types/memory'
-
-// Create the default memory API client instance
-export const memoryApi = createWebUIMemoryClient()
 
 // Convert shared Memory (with Date fields) to web UI Memory (with string fields)
 function convertMemoryForUI(sharedMemory: SharedMemory): Memory {
@@ -18,18 +15,13 @@ function convertMemoryForUI(sharedMemory: SharedMemory): Memory {
   }
 }
 
-// Legacy wrapper for backward compatibility
-export class LegacyMemoryApiClient {
+// Web UI Memory API Client with proper return types
+class WebUIMemoryApiClient {
   constructor(private client: MemoryApiClient) {}
 
   async getMemories(): Promise<Memory[]> {
-    try {
-      const memories = await this.client.getMemories()
-      return memories.map(convertMemoryForUI)
-    } catch (error) {
-      console.error('Failed to get memories:', error)
-      return []
-    }
+    const memories = await this.client.getMemories()
+    return memories.map(convertMemoryForUI)
   }
 
   async createMemory(data: MemoryFormData): Promise<void> {
@@ -45,27 +37,19 @@ export class LegacyMemoryApiClient {
   }
 
   async searchMemories(query: string, namespace?: string): Promise<Memory[]> {
-    try {
-      const results: MemorySearchResult[] = await this.client.searchMemories({
-        query,
-        ...(namespace && namespace !== 'all' ? { namespace } : {}),
-      })
-      
-      // Extract memory objects and convert dates for UI
-      return results.map(result => convertMemoryForUI(result.memory))
-    } catch (error) {
-      console.error('Failed to search memories:', error)
-      return []
-    }
+    const results = await this.client.searchMemories({
+      query,
+      ...(namespace && namespace !== 'all' ? { namespace } : {}),
+    })
+    
+    // Extract memory objects and convert dates for UI
+    return results.map(result => convertMemoryForUI(result.memory))
   }
 }
 
-// Export both the new client and legacy wrapper
-export { memoryApi as newMemoryApi }
-export const legacyMemoryApi = new LegacyMemoryApiClient(memoryApi)
-
-// For backward compatibility, export the legacy client as the default
-export default legacyMemoryApi
+// Create and export the single API client instance
+const sharedClient = createWebUIMemoryClient()
+export const memoryApi = new WebUIMemoryApiClient(sharedClient)
 
 // Re-export types for convenience
 export type { Memory, MemoryFormData }
