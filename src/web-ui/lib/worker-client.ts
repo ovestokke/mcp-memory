@@ -24,6 +24,12 @@ export class AuthenticatedWorkerClient {
       }
     }
     
+    console.log('NextAuth Session:', JSON.stringify({
+      userId: session.user.id,
+      email: session.user.email,
+      hasAccessToken: !!session.accessToken
+    }))
+    
     return { session }
   }
 
@@ -49,11 +55,17 @@ export class AuthenticatedWorkerClient {
       }
 
       // Make request to worker
-      const response = await fetch(`${WORKER_URL}${options.path}`, {
+      const fullUrl = `${WORKER_URL}${options.path}`
+      console.log('=== WORKER CLIENT REQUEST ===', options.method, fullUrl)
+      console.log('Headers:', headers)
+      
+      const response = await fetch(fullUrl, {
         method: options.method,
         headers,
         ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       })
+      
+      console.log('=== WORKER CLIENT RESPONSE ===', response.status, response.statusText)
 
       // Handle non-OK responses
       if (!response.ok) {

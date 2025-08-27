@@ -1,12 +1,10 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mcp-memory-server",
   "main": "src/mcp-server/index.ts",
-  "compatibility_date": "2024-01-01",
+  "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "dev": {
-    "port": 8787
-  },
   "env": {
     "development": {
       "vars": {
@@ -42,28 +40,42 @@
       ]
     }
   },
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "MemoryMCP"
+      ],
+      "tag": "v1"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
-        "name": "MEMORY_STORAGE",
+        "class_name": "MemoryMCP",
+        "name": "MCP_OBJECT"
+      },
+      {
         "class_name": "MemoryStorage",
-        "script_name": "mcp-memory-server"
+        "name": "MEMORY_STORAGE"
       }
     ]
   },
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "<Add-KV-ID>"
+    }
+  ],
   "vectorize": [
     {
       "binding": "VECTORIZE",
       "index_name": "memory-embeddings"
     }
   ],
-  "build": {
-  "command": "npx tsc -p src/mcp-server/tsconfig.json && npx esbuild src/mcp-server/index.ts --bundle --outfile=dist/index.js --platform=neutral --target=es2022 --format=esm --external:cloudflare:*",
-    "watch_dir": "src/mcp-server",
-    "watch_ignore": [
-      "src/web-ui/.next/**",
-      "src/web-ui/node_modules/**",
-      "**/.next/**"
-    ]
+  "observability": {
+    "enabled": true
+  },
+  "dev": {
+    "port": 8787
   }
 }

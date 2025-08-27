@@ -16,10 +16,17 @@ export class MemoryStorage {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const method = request.method
-    const userId = request.headers.get('x-user-id') || 'demo-user'
+    const userId = request.headers.get('x-user-id')
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Authentication required - missing x-user-id header' }), { 
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
 
     try {
-      // Handle API routes
+      // Handle API routes with mandatory authentication
       if (url.pathname.startsWith('/api/')) {
         const apiPath = url.pathname.replace('/api', '')
         switch (`${method} ${apiPath}`) {

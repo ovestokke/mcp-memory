@@ -24,9 +24,12 @@ export const authOptions: NextAuthOptions = {
       if (account && account.refresh_token) {
         token.refreshToken = account.refresh_token
       }
-      if (user && user.id) {
-        token.id = user.id
+      if (user && user.email) {
+        // Use email as consistent user identifier instead of Google user ID
+        token.id = user.email
+        console.log('JWT Callback - Setting token.id to email:', user.email)
       }
+      console.log('JWT Callback - Final token.id:', token.id)
       return token
     },
     async session({ session, token }) {

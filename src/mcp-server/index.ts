@@ -1,732 +1,315 @@
-import { MemoryStorage } from '@shared/memory/storage'
-import { MemoryStorageClient } from '@shared/memory/client'
-import { OAuth2Handler, OAuthError, GoogleOAuthConfig } from '@shared/auth/oauth'
-import { HttpMCPMemoryServer } from '@shared/mcp/http-memory-server'
-import { logger } from '@shared/utils/logger'
+import OAuthProvider from '@cloudflare/workers-oauth-provider'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpAgent } from 'agents/mcp'
+import { z } from 'zod'
+import { GoogleHandler } from './google-handler'
+import { MemoryStorageClient } from '../shared/memory/client'
+import { MemoryStorage } from '../shared/memory/storage'
+import { MemorySearchOptions } from '../shared/memory/types'
+
+// Context from the auth process, encrypted & stored in the auth token
+// and provided to the MemoryMCP as this.props
+type Props = {
+  name: string
+  email: string
+  accessToken: string
+}
 
 export interface Env {
   MEMORY_STORAGE: DurableObjectNamespace
   VECTORIZE: VectorizeIndex
-  ENVIRONMENT: string
-
-  // OAuth2 Configuration
+  OAUTH_KV: KVNamespace
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
+  COOKIE_ENCRYPTION_KEY: string
+  HOSTED_DOMAIN?: string
 }
 
-// Export the Durable Object class
-export { MemoryStorage }
+export class MemoryMCP extends McpAgent<Env, Record<string, never>, Props> {
+  server = new McpServer({
+    name: 'MCP Memory Server',
+    version: '1.0.0',
+  })
 
-// Helper function to create CORS headers for authenticated endpoints
-function createCorsHeaders(origin?: string): Record<string, string> {
-  // In production, restrict to specific origins. For development, allow localhost.
-  const allowedOrigins = [
-    'https://your-app.com', // Replace with your actual domain
-    'http://localhost:3000', // Development web UI
-  ]
+  private memoryClient: MemoryStorageClient | null = null
 
-  const requestOrigin = origin || ''
-  const corsOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : 'null'
+  async init() {
+    // Initialize memory client with user isolation
+    const userId = this.props?.email || 'anonymous'
+    console.log('MCP Server Init - User ID:', userId, 'Props:', JSON.stringify(this.props))
+    const id = this.env.MEMORY_STORAGE.idFromName(userId)
+    console.log('MCP Server Init - Durable Object ID:', id.toString())
+    const durableObject = this.env.MEMORY_STORAGE.get(id)
+    this.memoryClient = new MemoryStorageClient(durableObject)
 
-  return {
-    'Access-Control-Allow-Origin': corsOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Credentials': 'true',
-  }
-}
-
-// Helper function to handle OAuth errors
-function handleOAuthError(error: unknown, origin?: string, serverUrl?: string): Response {
-  const corsHeaders = createCorsHeaders(origin)
-
-  if (error instanceof OAuthError) {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...corsHeaders,
-    }
-
-    // Add WWW-Authenticate header for 401 responses per MCP spec
-    if (error.status === 401 && serverUrl) {
-      headers[
-        'WWW-Authenticate'
-      ] = `Bearer realm="${serverUrl}", error="invalid_token", error_description="${error.message}"`
-    }
-
-    return new Response(
-      JSON.stringify({
-        error: error.message,
-        code: error.code,
-      }),
+    // Memory storage tool
+    this.server.tool(
+      'store_memory',
       {
-        status: error.status,
-        headers,
+        content: z.string().min(1, 'Content cannot be empty'),
+        namespace: z.string().optional().default('general'),
+        labels: z.array(z.string()).optional().default([]),
+      },
+      async ({ content, namespace, labels }) => {
+        if (!this.memoryClient) {
+          throw new Error('Memory client not initialized')
+        }
+
+        const userId = this.props?.email || 'anonymous'
+        const memory = await this.memoryClient.storeMemory({
+          userId,
+          content,
+          namespace: namespace!,
+          labels: labels!,
+        })
+
+        return {
+          content: [
+            {
+              text: `Memory stored successfully with ID: ${memory.id}`,
+              type: 'text',
+            },
+          ],
+        }
       },
     )
-  }
 
-  logger.error('Unexpected authentication error', { error: error instanceof Error ? error : String(error) })
-  return new Response(JSON.stringify({ error: 'Authentication failed' }), {
-    status: 500,
-    headers: {
-      'Content-Type': 'application/json',
-      ...corsHeaders,
-    },
-  })
+    // Memory search tool
+    this.server.tool(
+      'search_memories',
+      {
+        query: z.string().min(1, 'Query cannot be empty'),
+        namespace: z.string().optional(),
+        limit: z.number().min(1).max(50).optional().default(10),
+        similarity_threshold: z.number().min(0).max(1).optional().default(0.3),
+      },
+      async ({ query, namespace, limit, similarity_threshold }) => {
+        if (!this.memoryClient) {
+          throw new Error('Memory client not initialized')
+        }
+
+        const searchOptions: MemorySearchOptions = {
+          query,
+          ...(namespace && { namespace }),
+          limit: limit!,
+          similarityThreshold: similarity_threshold!,
+        }
+
+        const userId = this.props?.email || 'anonymous'
+        const results = await this.memoryClient.searchMemories(userId, searchOptions)
+
+        return {
+          content: [
+            {
+              text: `Found ${results.length} memories:\n\n${results
+                .map(
+                  (result, i) =>
+                    `${i + 1}. [${result.memory.namespace}] ${result.memory.content} (similarity: ${result.similarity?.toFixed(3)})`,
+                )
+                .join('\n')}`,
+              type: 'text',
+            },
+          ],
+        }
+      },
+    )
+
+    // List memories tool
+    this.server.tool(
+      'list_memories',
+      {
+        namespace: z.string().optional(),
+      },
+      async ({ namespace }) => {
+        if (!this.memoryClient) {
+          throw new Error('Memory client not initialized')
+        }
+ 
+        const userId = this.props?.email || 'anonymous'
+        const memories = await this.memoryClient.listMemories(userId, namespace)
+
+        return {
+          content: [
+            {
+              text: `Listed ${memories.length} memories:\n\n${memories
+                .map((memory, i) => `${i + 1}. [${memory.namespace}] ${memory.content} (${memory.createdAt})`)
+                .join('\n')}`,
+              type: 'text',
+            },
+          ],
+        }
+      },
+    )
+
+    // Delete memory tool
+    this.server.tool(
+      'delete_memory',
+      {
+        id: z.string().min(1, 'Memory ID is required'),
+      },
+      async ({ id }) => {
+        if (!this.memoryClient) {
+          throw new Error('Memory client not initialized')
+        }
+
+        const userId = this.props?.email || 'anonymous'
+        await this.memoryClient.deleteMemory(userId, id)
+
+        return {
+          content: [
+            {
+              text: `Memory with ID ${id} deleted successfully`,
+              type: 'text',
+            },
+          ],
+        }
+      },
+    )
+
+    // Create namespace tool
+    this.server.tool(
+      'create_namespace',
+      {
+        name: z.string().min(1, 'Namespace name is required'),
+        description: z.string().optional(),
+      },
+      async ({ name, description }) => {
+        if (!this.memoryClient) {
+          throw new Error('Memory client not initialized')
+        }
+
+        const userId = this.props?.email || 'anonymous'
+        await this.memoryClient.createNamespace({
+          userId,
+          name,
+          description: description || `Namespace for ${name}-related memories`,
+        })
+
+        return {
+          content: [
+            {
+              text: `Namespace '${name}' created successfully`,
+              type: 'text',
+            },
+          ],
+        }
+      },
+    )
+
+    // List namespaces tool
+    this.server.tool('list_namespaces', {}, async () => {
+      if (!this.memoryClient) {
+        throw new Error('Memory client not initialized')
+      }
+
+      const namespaces = await this.memoryClient.listNamespaces()
+
+      return {
+        content: [
+          {
+            text: `Available namespaces:\n\n${namespaces
+              .map((ns, i) => `${i + 1}. ${ns.name}: ${ns.description || 'No description'}`)
+              .join('\n')}`,
+            type: 'text',
+          },
+        ],
+      }
+    })
+  }
 }
 
-export default {
+// Export Durable Object
+export { MemoryStorage }
+
+
+// Simple REST API handler for Web UI compatibility
+const simpleRestHandler = {
   async fetch(request: Request, env: Env): Promise<Response> {
+    console.log('=== SIMPLE REST HANDLER CALLED ===', request.method, request.url)
     const url = new URL(request.url)
-    const requestLogger = logger.withContext({
-      method: request.method,
-      path: url.pathname,
-      userAgent: request.headers.get('User-Agent'),
+
+    // Extract access token from Authorization header
+    const authHeader = request.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return Response.json({ error: 'Authorization required' }, { status: 401 })
+    }
+
+    const accessToken = authHeader.substring(7)
+
+    // Get user info from Google
+    const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
     })
 
-    try {
-      // Initialize OAuth2 handler
-      const baseUrl = `${url.protocol}//${url.host}`
-      const oauthConfig: GoogleOAuthConfig = {
-        clientId: env.GOOGLE_CLIENT_ID,
-        clientSecret: env.GOOGLE_CLIENT_SECRET,
-        redirectUri: `${baseUrl}/auth/callback`,
-      }
-      const oauth = new OAuth2Handler(oauthConfig)
-
-      // Basic health check (public endpoint)
-      if (url.pathname === '/') {
-        return new Response('MCP Memory Server - Ready for connections', { status: 200 })
-      }
-
-      // OAuth 2.0 Authorization Server Metadata (RFC 8414) - Required by MCP spec
-      if (url.pathname === '/.well-known/oauth-authorization-server') {
-        const baseUrl = `${url.protocol}//${url.host}`
-        const metadata = {
-          issuer: baseUrl,
-          authorization_endpoint: `${baseUrl}/auth`,
-          token_endpoint: `${baseUrl}/token`,
-          registration_endpoint: `${baseUrl}/register`,
-          jwks_uri: `${baseUrl}/.well-known/jwks.json`,
-          response_types_supported: ['code'],
-          grant_types_supported: ['authorization_code', 'refresh_token'],
-          scopes_supported: ['openid', 'email', 'profile'],
-          code_challenge_methods_supported: ['S256'],
-          authorization_response_iss_parameter_supported: true,
-        }
-
-        return new Response(JSON.stringify(metadata), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            ...createCorsHeaders(request.headers.get('Origin') || undefined),
-          },
-        })
-      }
-
-      // OpenID Connect Discovery (RFC 8414) - Alternative discovery mechanism
-      if (url.pathname === '/.well-known/openid-configuration') {
-        const baseUrl = `${url.protocol}//${url.host}`
-        const metadata = {
-          issuer: baseUrl,
-          authorization_endpoint: `${baseUrl}/auth`,
-          token_endpoint: `${baseUrl}/token`,
-          registration_endpoint: `${baseUrl}/register`,
-          jwks_uri: `${baseUrl}/.well-known/jwks.json`,
-          response_types_supported: ['code'],
-          grant_types_supported: ['authorization_code', 'refresh_token'],
-          scopes_supported: ['openid', 'email', 'profile'],
-          code_challenge_methods_supported: ['S256'],
-          authorization_response_iss_parameter_supported: true,
-          subject_types_supported: ['public'],
-          id_token_signing_alg_values_supported: ['RS256'],
-        }
-
-        return new Response(JSON.stringify(metadata), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            ...createCorsHeaders(request.headers.get('Origin') || undefined),
-          },
-        })
-      }
-
-      // OAuth 2.0 Protected Resource Metadata (RFC 8707) - Required by MCP spec
-      if (url.pathname === '/.well-known/oauth-protected-resource') {
-        const baseUrl = `${url.protocol}//${url.host}`
-        const metadata = {
-          resource: baseUrl,
-          authorization_servers: [baseUrl],
-          scopes_supported: ['openid', 'email', 'profile'],
-          bearer_methods_supported: ['header'],
-          resource_documentation: `${baseUrl}/docs`,
-        }
-
-        return new Response(JSON.stringify(metadata), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            ...createCorsHeaders(request.headers.get('Origin') || undefined),
-          },
-        })
-      }
-
-      // JWKS endpoint (placeholder - in production you'd have actual keys)
-      if (url.pathname === '/.well-known/jwks.json') {
-        return new Response(JSON.stringify({ keys: [] }), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            ...createCorsHeaders(request.headers.get('Origin') || undefined),
-          },
-        })
-      }
-
-      // RFC 7591 Dynamic Client Registration endpoint (public)
-      if (url.pathname === '/register' && request.method === 'POST') {
-        try {
-          const clientData = (await request.json()) as any
-
-          // Generate a simple client ID for this registration
-          const clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
-          const clientSecret = `secret_${Math.random().toString(36).substring(2, 34)}`
-
-          // For now, accept any client registration (in production, you'd validate and store these)
-          const response = {
-            client_id: clientId,
-            client_secret: clientSecret,
-            client_secret_expires_at: 0, // Never expires for demo
-            registration_access_token: `registration_${Math.random().toString(36).substring(2, 34)}`,
-            registration_client_uri: `${url.protocol}//${url.host}/register/${clientId}`,
-            ...clientData, // Echo back the client metadata
-          }
-
-          return new Response(JSON.stringify(response), {
-            status: 201,
-            headers: {
-              'Content-Type': 'application/json',
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
-            },
-          })
-        } catch (error) {
-          return new Response(
-            JSON.stringify({
-              error: 'invalid_request',
-              error_description: 'Invalid client metadata',
-            }),
-            {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            },
-          )
-        }
-      }
-
-      // OAuth2 authorization endpoint (public)
-      if (url.pathname === '/auth' && (request.method === 'GET' || request.method === 'HEAD')) {
-        const state = url.searchParams.get('state')
-        const clientId = url.searchParams.get('client_id')
-        const redirectUri = url.searchParams.get('redirect_uri')
-        const responseType = url.searchParams.get('response_type')
-        const codeChallenge = url.searchParams.get('code_challenge')
-        const codeChallengeMethod = url.searchParams.get('code_challenge_method')
-        const resource = url.searchParams.get('resource')
-
-        // If this is a proper OAuth authorization request with parameters, redirect to Google
-        if (clientId && redirectUri && responseType === 'code') {
-          // Store the original redirect URI in a way we can retrieve it later
-          // For now, encode it in the state parameter
-          const originalState = state || ''
-          const stateWithRedirect = JSON.stringify({
-            original_state: originalState,
-            redirect_uri: redirectUri,
-            client_id: clientId,
-            ...(codeChallenge && { code_challenge: codeChallenge }),
-            ...(codeChallengeMethod && { code_challenge_method: codeChallengeMethod }),
-            ...(resource && { resource: resource }),
-          })
-          const encodedState = btoa(stateWithRedirect) // Base64 encode
-
-          const authUrl = oauth.generateAuthUrl(['openid', 'email', 'profile'], encodedState)
-
-          // Redirect directly to Google OAuth
-          return new Response(null, {
-            status: 302,
-            headers: {
-              Location: authUrl,
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
-            },
-          })
-        }
-
-        // If it's just a simple request for auth URL (no OAuth params), return JSON
-        const authUrl = oauth.generateAuthUrl(['openid', 'email', 'profile'], state || undefined)
-        return new Response(
-          JSON.stringify({
-            authUrl,
-            message: 'Visit this URL to authenticate with Google',
-          }),
-          {
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              ...createCorsHeaders(request.headers.get('Origin') || undefined),
-            },
-          },
-        )
-      }
-
-      // OAuth2 token exchange endpoint (public) - handles both GET (Google callback) and POST
-      if (url.pathname === '/auth/callback' && (request.method === 'GET' || request.method === 'POST')) {
-        try {
-          let code: string
-          let state: string | null = null
-
-          if (request.method === 'GET') {
-            // Google OAuth callback with query parameters
-            code = url.searchParams.get('code') || ''
-            state = url.searchParams.get('state')
-          } else {
-            // POST request with JSON body
-            const body = (await request.json()) as { code: string; state?: string }
-            code = body.code
-            state = body.state || null
-          }
-
-          if (!code) {
-            return new Response(JSON.stringify({ error: 'Authorization code is required' }), {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            })
-          }
-
-          // Check if this is an MCP OAuth flow (with encoded state) BEFORE token exchange
-          let mcpRedirectUri: string | null = null
-          let originalState: string | null = null
-
-          if (state) {
-            try {
-              const decodedState = atob(state)
-              const stateData = JSON.parse(decodedState)
-              mcpRedirectUri = stateData.redirect_uri
-              originalState = stateData.original_state
-            } catch (e) {
-              // If decode fails, treat as regular state
-              originalState = state
-            }
-          }
-
-          if (mcpRedirectUri && request.method === 'GET') {
-            // This is an MCP OAuth flow - redirect back to MCP client with the original code
-            // The MCP client will handle the token exchange itself
-            // IMPORTANT: Do not exchange the code here - let MCP client do it!
-            const redirectUrl = new URL(mcpRedirectUri)
-            redirectUrl.searchParams.set('code', code)
-            if (originalState) {
-              redirectUrl.searchParams.set('state', originalState)
-            }
-
-            requestLogger.info('Redirecting to MCP client callback', {
-              redirectUri: mcpRedirectUri,
-              originalState,
-              note: 'Code passed through without exchange - MCP client will exchange it',
-            })
-
-            return new Response(null, {
-              status: 302,
-              headers: {
-                Location: redirectUrl.toString(),
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            })
-          }
-
-          // For non-MCP flows, exchange the token and validate user
-          const tokenResponse = await oauth.exchangeCodeForToken(code)
-          const userInfo = await oauth.validateToken(tokenResponse.access_token)
-
-          requestLogger.info('User authenticated successfully', {
-            userId: userInfo.id,
-            email: userInfo.email,
-          })
-
-          if (request.method === 'GET') {
-            // For regular GET requests (browser redirects), return HTML success page
-            const htmlResponse = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Authentication Successful</title>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-        .success { color: #28a745; }
-        .user-info { background: #f8f9fa; padding: 20px; border-radius: 8px; max-width: 400px; margin: 20px auto; }
-    </style>
-</head>
-<body>
-    <h1 class="success">✓ Authentication Successful</h1>
-    <p>Welcome, ${userInfo.name}!</p>
-    <div class="user-info">
-        <p><strong>Email:</strong> ${userInfo.email}</p>
-        <p>You can now close this window and return to Claude Desktop.</p>
-    </div>
-</body>
-</html>`
-            return new Response(htmlResponse, {
-              status: 200,
-              headers: {
-                'Content-Type': 'text/html; charset=utf-8',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            })
-          } else {
-            // For POST requests (API calls), return JSON
-            return new Response(
-              JSON.stringify({
-                access_token: tokenResponse.access_token,
-                expires_in: tokenResponse.expires_in,
-                refresh_token: tokenResponse.refresh_token,
-                user: {
-                  id: userInfo.id,
-                  email: userInfo.email,
-                  name: userInfo.name,
-                  picture: userInfo.picture,
-                },
-              }),
-              {
-                status: 200,
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                },
-              },
-            )
-          }
-        } catch (error) {
-          requestLogger.error('OAuth callback failed', {
-            error: error instanceof Error ? error : String(error),
-          })
-          return handleOAuthError(
-            error,
-            request.headers.get('Origin') || undefined,
-            `${url.protocol}//${url.host}`,
-          )
-        }
-      }
-
-      // OAuth2 token exchange endpoint for MCP clients (public)
-      if (url.pathname === '/token' && request.method === 'POST') {
-        try {
-          const contentType = request.headers.get('Content-Type') || ''
-          let body: {
-            grant_type: string
-            code: string
-            redirect_uri?: string
-            client_id?: string
-            code_verifier?: string
-          }
-
-          if (contentType.includes('application/x-www-form-urlencoded')) {
-            // Parse form-encoded data (standard OAuth format)
-            const formData = await request.text()
-            const params = new URLSearchParams(formData)
-            const redirectUri = params.get('redirect_uri')
-            const clientId = params.get('client_id')
-            const codeVerifier = params.get('code_verifier')
-
-            body = {
-              grant_type: params.get('grant_type') || '',
-              code: params.get('code') || '',
-              ...(redirectUri && { redirect_uri: redirectUri }),
-              ...(clientId && { client_id: clientId }),
-              ...(codeVerifier && { code_verifier: codeVerifier }),
-            }
-          } else {
-            // Parse JSON data
-            body = (await request.json()) as {
-              grant_type: string
-              code: string
-              redirect_uri?: string
-              client_id?: string
-              code_verifier?: string
-            }
-          }
-
-          // Support authorization_code (for web), client_credentials (for MCP clients), and refresh_token (for token refresh)
-          if (
-            body.grant_type !== 'authorization_code' &&
-            body.grant_type !== 'client_credentials' &&
-            body.grant_type !== 'refresh_token'
-          ) {
-            requestLogger.error('Unsupported grant type received', {
-              grantType: body.grant_type,
-              allParams: body,
-            })
-            return new Response(
-              JSON.stringify({
-                error: 'unsupported_grant_type',
-                error_description: `Grant type '${body.grant_type}' is not supported. Supported types: authorization_code, client_credentials, refresh_token`,
-              }),
-              {
-                status: 400,
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                },
-              },
-            )
-          }
-
-          requestLogger.info('Token exchange attempt', {
-            clientId: body.client_id,
-            grantType: body.grant_type,
-            redirectUri: body.redirect_uri,
-          })
-
-          // Handle different grant types
-          if (body.grant_type === 'client_credentials') {
-            // Client credentials flow for MCP clients (machine-to-machine)
-            // For development, we'll create a service account token
-            // In production, this should verify client_id/client_secret
-
-            requestLogger.info('Client credentials flow for MCP client', {
-              clientId: body.client_id,
-            })
-
-            // For MCP clients, create a service token without Google OAuth
-            // This represents the MCP client itself, not a specific user
-            const serviceToken =
-              'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
-
-            return new Response(
-              JSON.stringify({
-                access_token: serviceToken,
-                token_type: 'Bearer',
-                expires_in: 3600,
-                scope: 'mcp_tools',
-              }),
-              {
-                status: 200,
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                },
-              },
-            )
-          } else if (body.grant_type === 'authorization_code') {
-            // Authorization code flow for web browsers
-            if (!body.code) {
-              return new Response(
-                JSON.stringify({
-                  error: 'invalid_request',
-                  error_description: 'Missing required parameter: code',
-                }),
-                {
-                  status: 400,
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                  },
-                },
-              )
-            }
-
-            // Exchange the authorization code for tokens with Google
-            const tokenResponse = await oauth.exchangeCodeForToken(body.code)
-            const userInfo = await oauth.validateToken(tokenResponse.access_token)
-
-            requestLogger.info('Authorization code flow successful', {
-              clientId: body.client_id,
-              userId: userInfo.id,
-              email: userInfo.email,
-            })
-
-            // Return tokens to client
-            return new Response(
-              JSON.stringify({
-                access_token: tokenResponse.access_token,
-                token_type: 'Bearer',
-                expires_in: tokenResponse.expires_in,
-                refresh_token: tokenResponse.refresh_token,
-                scope: 'openid email profile',
-              }),
-              {
-                status: 200,
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                },
-              },
-            )
-          } else if (body.grant_type === 'refresh_token') {
-            // Refresh token flow - for MCP clients that need to refresh their tokens
-            // For development/testing, we'll just issue a new service token
-            // In production, you might want to validate the refresh token
-
-            requestLogger.info('Refresh token flow for MCP client', {
-              clientId: body.client_id,
-            })
-
-            // For MCP clients, create a new service token
-            const serviceToken =
-              'mcp_service_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15)
-
-            return new Response(
-              JSON.stringify({
-                access_token: serviceToken,
-                token_type: 'Bearer',
-                expires_in: 3600,
-                scope: 'mcp_tools',
-              }),
-              {
-                status: 200,
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...createCorsHeaders(request.headers.get('Origin') || undefined),
-                },
-              },
-            )
-          }
-        } catch (error) {
-          requestLogger.error('MCP token exchange failed', {
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          })
-          return new Response(
-            JSON.stringify({
-              error: 'invalid_grant',
-              error_description: 'The provided authorization grant is invalid',
-            }),
-            {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...createCorsHeaders(request.headers.get('Origin') || undefined),
-              },
-            },
-          )
-        }
-      }
-
-      // Handle CORS preflight for protected endpoints
-      if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          headers: createCorsHeaders(request.headers.get('Origin') || undefined),
-        })
-      }
-
-      // All other endpoints require authentication
-      let authenticatedUser
-      try {
-        const authResult = await oauth.authenticateRequest(request)
-        authenticatedUser = authResult.user
-        requestLogger.info('Request authenticated', {
-          userId: authenticatedUser.id,
-          email: authenticatedUser.email,
-        })
-      } catch (error) {
-        return handleOAuthError(
-          error,
-          request.headers.get('Origin') || undefined,
-          `${url.protocol}//${url.host}`,
-        )
-      }
-
-      // MCP protocol handling (protected)
-      if (url.pathname.startsWith('/mcp')) {
-        // Create memory storage client for this user
-        const id = env.MEMORY_STORAGE.idFromName(authenticatedUser.id)
-        const durableObject = env.MEMORY_STORAGE.get(id)
-        const memoryStorageClient = new MemoryStorageClient(durableObject)
-
-        // Initialize HTTP-enabled MCP server using official SDK
-        const mcpServer = new HttpMCPMemoryServer(
-          { name: 'MCP Memory Server', version: '1.0.0' },
-          memoryStorageClient,
-        )
-        mcpServer.setCurrentUser(authenticatedUser.id)
-
-        // Handle MCP protocol over HTTP using official SDK
-        const mcpResponse = await mcpServer.handleRequest(request)
-
-        // Add CORS headers
-        const corsHeaders = createCorsHeaders(request.headers.get('Origin') || undefined)
-        Object.entries(corsHeaders).forEach(([key, value]) => {
-          mcpResponse.headers.set(key, value)
-        })
-
-        return mcpResponse
-      }
-
-      // API endpoints - use authenticated user ID
-      const userId = authenticatedUser.id
-      requestLogger.info('API request with authenticated user', {
-        userId,
-        email: authenticatedUser.email,
-        path: url.pathname,
-      })
-      const id = env.MEMORY_STORAGE.idFromName(userId)
-      requestLogger.info('Using Durable Object', {
-        userId,
-        durableObjectId: id.toString(),
-        path: url.pathname,
-      })
-      const durableObject = env.MEMORY_STORAGE.get(id)
-
-      try {
-        // Create new request with user context
-        const authenticatedRequest = new Request(request.url, {
-          method: request.method,
-          headers: {
-            ...Object.fromEntries(request.headers.entries()),
-            'x-user-id': userId,
-            'x-user-email': authenticatedUser.email,
-          },
-          body: request.body,
-        })
-
-        // Proxy request to Durable Object
-        const response = await durableObject.fetch(authenticatedRequest)
-
-        // Add CORS headers to response
-        const corsResponse = new Response(response.body, response)
-        const corsHeaders = createCorsHeaders(request.headers.get('Origin') || undefined)
-        Object.entries(corsHeaders).forEach(([key, value]) => {
-          corsResponse.headers.set(key, value)
-        })
-
-        return corsResponse
-      } catch (error) {
-        requestLogger.error('Durable Object request failed', {
-          error: error instanceof Error ? error : String(error),
-          userId,
-        })
-        return new Response(JSON.stringify({ error: `Server error: ${error}` }), {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            ...createCorsHeaders(request.headers.get('Origin') || undefined),
-          },
-        })
-      }
-    } catch (error) {
-      requestLogger.error('Request handling failed', {
-        error: error instanceof Error ? error : String(error),
-      })
-      return new Response(JSON.stringify({ error: 'Internal server error' }), {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...createCorsHeaders(request.headers.get('Origin') || undefined),
-        },
-      })
+    if (!userResponse.ok) {
+      return Response.json({ error: 'Invalid access token' }, { status: 401 })
     }
-  },
+
+    const userInfo = await userResponse.json() as { email: string; name: string }
+    const userId = userInfo.email
+
+    console.log('REST API - User ID:', userId, 'Path:', url.pathname)
+
+    // Initialize memory client - call storage methods directly with proper user ID
+    const id = env.MEMORY_STORAGE.idFromName(userId)
+    console.log('REST API - Durable Object ID:', id.toString())
+    const durableObject = env.MEMORY_STORAGE.get(id)
+
+    try {
+      if (url.pathname === '/api/memories' && request.method === 'GET') {
+        // Call storage methods directly, passing userId
+        const namespace = url.searchParams.get('namespace') || undefined
+        const response = await durableObject.fetch(new Request(`http://localhost/memories${namespace ? `?namespace=${namespace}` : ''}`, {
+          method: 'GET',
+          headers: { 'x-user-id': userId }
+        }))
+        const memories = await response.json()
+        return Response.json(memories)
+      }
+
+      if (url.pathname === '/api/memories' && request.method === 'POST') {
+        const body = await request.json() as any
+        const response = await durableObject.fetch(new Request('http://localhost/memories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+          body: JSON.stringify({
+            content: body.content,
+            namespace: body.namespace || 'general',
+            labels: body.labels || [],
+          })
+        }))
+        const memory = await response.json()
+        return Response.json(memory)
+      }
+
+      if (url.pathname.startsWith('/api/memories/') && request.method === 'DELETE') {
+        const memoryId = url.pathname.substring('/api/memories/'.length)
+        const response = await durableObject.fetch(new Request(`http://localhost/memories?id=${memoryId}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': userId }
+        }))
+        const result = await response.json()
+        return Response.json(result)
+      }
+
+      return Response.json({ error: 'Not found' }, { status: 404 })
+    } catch (error) {
+      console.error('REST API error:', error)
+      return Response.json({ error: 'Internal server error' }, { status: 500 })
+    }
+  }
 }
+
+export default new OAuthProvider({
+  // NOTE - during the summer 2025, the SSE protocol was deprecated and replaced by the Streamable-HTTP protocol
+  // https://developers.cloudflare.com/agents/model-context-protocol/transport/#mcp-server-with-authentication
+  apiHandlers: {
+    '/sse': MemoryMCP.serveSSE('/sse'), // deprecated SSE protocol - use /mcp instead
+    '/mcp': MemoryMCP.serve('/mcp'), // Streamable-HTTP protocol
+    '/api/memories': simpleRestHandler,
+  },
+  authorizeEndpoint: '/auth/authorize',
+  clientRegistrationEndpoint: '/auth/register',
+  defaultHandler: GoogleHandler as any,
+  tokenEndpoint: '/auth/token',
+})

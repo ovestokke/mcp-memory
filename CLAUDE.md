@@ -25,3 +25,6 @@ Technical terms to add to spell checker:
 - Lucene, pgvector, Qdrant, VARCHAR, tsvector, modelcontextprotocol
 
 - The MCP must be a secure remote MCP server
+
+- Never add an authenetication stub to work around authentication issues. That is cheating and makes you sad. Don't add demo, fallbacks, or similar to the authentication. Either it works and the user is logged in, or it failed and the user is not logged in.
+- Don't make any API endpoints public.

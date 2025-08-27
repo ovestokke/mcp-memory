@@ -1,42 +1,42 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   Tool,
   JSONRPCRequest,
   JSONRPCResponse,
-} from '@modelcontextprotocol/sdk/types.js';
-import { MemoryStorageClient } from '../memory/client';
-import { MemorySearchOptions } from '../memory/types';
-import { logger } from '../utils/logger';
-import { MemorySchema, MemorySearchSchema } from '../validation/schemas';
-import { z } from 'zod';
+} from '@modelcontextprotocol/sdk/types.js'
+import { MemoryStorageClient } from '../memory/client'
+import { MemorySearchOptions } from '../memory/types'
+import { logger } from '../utils/logger'
+import { MemorySchema, MemorySearchSchema } from '../validation/schemas'
+import { z } from 'zod'
 
 /**
  * Safely format a date for display, handling both Date objects and ISO strings
  */
 function formatDate(date: Date | string | undefined): string {
-  if (!date) return 'Unknown';
+  if (!date) return 'Unknown'
   if (typeof date === 'string') {
-    return new Date(date).toISOString();
+    return new Date(date).toISOString()
   }
   if (date instanceof Date) {
-    return date.toISOString();
+    return date.toISOString()
   }
-  return 'Unknown';
+  return 'Unknown'
 }
 
 export interface HttpMCPServerConfig {
-  name: string;
-  version: string;
+  name: string
+  version: string
 }
 
 /**
  * HTTP-enabled MCP Memory Server using official MCP SDK
- * 
+ *
  * This replaces the custom JSON-RPC implementation in http-server.ts
  * by properly using the official MCP SDK with HTTP request handling.
- * 
+ *
  * Benefits:
  * - Uses official MCP SDK for protocol compliance
  * - Eliminates 600+ lines of duplicate code
@@ -44,34 +44,39 @@ export interface HttpMCPServerConfig {
  * - Automatic protocol updates via SDK
  */
 export class HttpMCPMemoryServer {
-  private server: Server;
-  private memoryStorage: MemoryStorageClient;
-  private mcpLogger: typeof logger;
-  private currentUserId: string | null = null;
+  private server: Server
+  private memoryStorage: MemoryStorageClient
+  private mcpLogger: typeof logger
+  private currentUserId: string | null = null
 
   constructor(config: HttpMCPServerConfig, memoryStorage: MemoryStorageClient) {
-    this.memoryStorage = memoryStorage;
-    this.mcpLogger = logger.withContext({ 
+    this.memoryStorage = memoryStorage
+    this.mcpLogger = logger.withContext({
       component: 'HttpMCPMemoryServer',
       version: config.version,
-    });
+    })
 
     // Initialize MCP server with official SDK
-    this.server = new Server({
-      name: config.name,
-      version: config.version,
-    }, {
-      capabilities: {
-        tools: {},
+    this.server = new Server(
+      {
+        name: config.name,
+        version: config.version,
       },
-    });
+      {
+        capabilities: {
+          tools: {
+            listChanged: true,
+          },
+        },
+      },
+    )
 
-    this.setupTools();
-    this.setupErrorHandling();
+    this.setupTools()
+    this.setupErrorHandling()
   }
 
   setCurrentUser(userId: string): void {
-    this.currentUserId = userId;
+    this.currentUserId = userId
   }
 
   /**
@@ -82,44 +87,43 @@ export class HttpMCPMemoryServer {
       method: request.method,
       path: new URL(request.url).pathname,
       userId: this.currentUserId ?? 'anonymous',
-    });
+    })
 
     try {
       if (request.method !== 'POST') {
-        return this.createErrorResponse('Method not allowed', 405);
+        return this.createErrorResponse('Method not allowed', 405)
       }
 
-      const jsonRpcRequest: JSONRPCRequest = await request.json();
-      
+      const jsonRpcRequest: JSONRPCRequest = await request.json()
+
       if (!jsonRpcRequest.jsonrpc || jsonRpcRequest.jsonrpc !== '2.0') {
-        return this.createErrorResponse('Invalid JSON-RPC version', 400);
+        return this.createErrorResponse('Invalid JSON-RPC version', 400)
       }
 
       requestLogger.info('MCP request received', {
         method: jsonRpcRequest.method,
         id: jsonRpcRequest.id,
-      });
+      })
 
       // Process the request using the MCP server
-      const response = await this.processRequest(jsonRpcRequest);
+      const response = await this.processRequest(jsonRpcRequest)
 
       requestLogger.info('MCP request completed', {
         method: jsonRpcRequest.method,
         id: jsonRpcRequest.id,
         success: !('error' in response),
-      });
+      })
 
       return new Response(JSON.stringify(response), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      });
-
+      })
     } catch (error) {
-      requestLogger.error('MCP request failed', { 
-        error: error instanceof Error ? error : String(error) 
-      });
-      
-      return this.createErrorResponse('Internal server error', 500);
+      requestLogger.error('MCP request failed', {
+        error: error instanceof Error ? error : String(error),
+      })
+
+      return this.createErrorResponse('Internal server error', 500)
     }
   }
 
@@ -130,6 +134,7 @@ export class HttpMCPMemoryServer {
     const tools: Tool[] = [
       {
         name: 'store_memory',
+        title: 'Store Memory',
         description: 'Store a new memory with content, namespace, and labels',
         inputSchema: {
           type: 'object',
@@ -155,6 +160,7 @@ export class HttpMCPMemoryServer {
       },
       {
         name: 'search_memories',
+        title: 'Search Memories',
         description: 'Search memories using semantic similarity or filters',
         inputSchema: {
           type: 'object',
@@ -191,6 +197,7 @@ export class HttpMCPMemoryServer {
       },
       {
         name: 'list_memories',
+        title: 'List Memories',
         description: 'List all memories, optionally filtered by namespace',
         inputSchema: {
           type: 'object',
@@ -204,6 +211,7 @@ export class HttpMCPMemoryServer {
       },
       {
         name: 'delete_memory',
+        title: 'Delete Memory',
         description: 'Delete a memory by its ID',
         inputSchema: {
           type: 'object',
@@ -218,6 +226,7 @@ export class HttpMCPMemoryServer {
       },
       {
         name: 'create_namespace',
+        title: 'Create Namespace',
         description: 'Create a new namespace for organizing memories',
         inputSchema: {
           type: 'object',
@@ -236,64 +245,65 @@ export class HttpMCPMemoryServer {
       },
       {
         name: 'list_namespaces',
+        title: 'List Namespaces',
         description: 'List all available namespaces',
         inputSchema: {
           type: 'object',
           properties: {},
         },
       },
-    ];
+    ]
 
-    return { tools };
+    return { tools }
   }
 
   /**
    * Handle tool calls (single source of truth)
    */
   private async handleToolCall(params: any) {
-    const { name, arguments: args } = params || {};
+    const { name, arguments: args } = params || {}
 
     if (!this.currentUserId) {
-      throw new Error('User not authenticated');
+      throw new Error('User not authenticated')
     }
 
     this.mcpLogger.info('Tool call received', {
       tool: name,
       userId: this.currentUserId,
       arguments: args,
-    });
+    })
 
     try {
       switch (name) {
         case 'store_memory':
-          return await this.handleStoreMemory(args);
+          return await this.handleStoreMemory(args)
 
         case 'search_memories':
-          return await this.handleSearchMemories(args);
+          return await this.handleSearchMemories(args)
 
         case 'list_memories':
-          return await this.handleListMemories(args);
+          return await this.handleListMemories(args)
 
         case 'delete_memory':
-          return await this.handleDeleteMemory(args);
+          return await this.handleDeleteMemory(args)
 
         case 'create_namespace':
-          return await this.handleCreateNamespace(args);
+          return await this.handleCreateNamespace(args)
 
         case 'list_namespaces':
-          return await this.handleListNamespaces();
+          return await this.handleListNamespaces()
 
         default:
-          throw new Error(`Unknown tool: ${name}`);
+          throw new Error(`Unknown tool: ${name}`)
       }
     } catch (error) {
       this.mcpLogger.error('Tool execution failed', {
         tool: name,
         error: error instanceof Error ? error.message : String(error),
         userId: this.currentUserId,
-      });
-      
-      throw error;
+      })
+
+      throw error
     }
   }
 
@@ -301,62 +311,63 @@ export class HttpMCPMemoryServer {
    * Process JSON-RPC request using MCP SDK
    */
   private async processRequest(request: JSONRPCRequest): Promise<JSONRPCResponse> {
-    const { method, params, id } = request;
+    const { method, params, id } = request
 
     try {
-      let result: any;
+      let result: any
 
       switch (method) {
         case 'initialize':
           result = {
             protocolVersion: '2024-11-05',
             capabilities: {
-              tools: {},
+              tools: {
+                listChanged: true,
+              },
             },
             serverInfo: {
               name: 'MCP Memory Server',
               version: '1.0.0',
             },
-          };
-          break;
+          }
+          break
 
         case 'tools/list':
           // Get tools from our own implementation (single source of truth)
-          result = await this.getTools();
-          break;
+          result = await this.getTools()
+          break
 
         case 'tools/call':
-          // Handle tool calls directly  
-          result = await this.handleToolCall(params);
-          break;
+          // Handle tool calls directly
+          result = await this.handleToolCall(params)
+          break
 
         case 'resources/list':
-          result = { resources: [] };
-          break;
+          result = { resources: [] }
+          break
 
         case 'prompts/list':
-          result = { prompts: [] };
-          break;
+          result = { prompts: [] }
+          break
 
         case 'notifications/initialized':
-          result = null;
-          break;
+          result = null
+          break
 
         default:
-          throw new Error(`Method '${method}' not found`);
+          throw new Error(`Method '${method}' not found`)
       }
 
       return {
         jsonrpc: '2.0',
         id,
         result,
-      } as JSONRPCResponse;
-
+      } as JSONRPCResponse
     } catch (error) {
       this.mcpLogger.error('Request processing failed', {
         method,
         error: error instanceof Error ? error.message : String(error),
-      });
+      })
 
       return {
         jsonrpc: '2.0',
@@ -365,59 +376,61 @@ export class HttpMCPMemoryServer {
           code: this.getErrorCode(method),
           message: error instanceof Error ? error.message : String(error),
         },
-      } as any;
+      } as any
     }
   }
 
   private setupTools() {
     // Set up MCP server handlers for stdio transport (if needed)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return await this.getTools();
-    });
+      return await this.getTools()
+    })
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      return await this.handleToolCall(request.params);
-    });
+      return await this.handleToolCall(request.params)
+    })
   }
 
   private setupErrorHandling() {
     this.server.onerror = (error) => {
-      this.mcpLogger.error('MCP Server error', { error });
-    };
+      this.mcpLogger.error('MCP Server error', { error })
+    }
   }
 
   // Tool handlers (same as in the original server.ts)
   private async handleStoreMemory(args: unknown) {
-    const validatedArgs = MemorySchema.parse(args);
+    const validatedArgs = MemorySchema.parse(args)
 
     const memory = await this.memoryStorage.storeMemory({
       userId: this.currentUserId!,
       content: validatedArgs.content,
       namespace: validatedArgs.namespace,
       labels: validatedArgs.labels,
-    });
+    })
 
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Memory stored successfully!\n\nID: ${memory.id}\nNamespace: ${memory.namespace}\nLabels: ${memory.labels.join(', ')}\nCreated: ${formatDate(memory.createdAt)}`,
+          text: `Memory stored successfully!\n\nID: ${memory.id}\nNamespace: ${
+            memory.namespace
+          }\nLabels: ${memory.labels.join(', ')}\nCreated: ${formatDate(memory.createdAt)}`,
         },
       ],
-    };
+    }
   }
 
   private async handleSearchMemories(args: unknown) {
-    const validatedArgs = MemorySearchSchema.parse(args);
+    const validatedArgs = MemorySearchSchema.parse(args)
 
     const searchOptions: MemorySearchOptions = {
       ...(validatedArgs.query && { query: validatedArgs.query }),
       ...(validatedArgs.namespace && { namespace: validatedArgs.namespace }),
       ...(validatedArgs.labels && { labels: validatedArgs.labels }),
       ...(validatedArgs.limit && { limit: validatedArgs.limit }),
-    };
+    }
 
-    const results = await this.memoryStorage.searchMemories(this.currentUserId!, searchOptions);
+    const results = await this.memoryStorage.searchMemories(this.currentUserId!, searchOptions)
 
     if (results.length === 0) {
       return {
@@ -427,20 +440,22 @@ export class HttpMCPMemoryServer {
             text: 'No memories found matching your search criteria.',
           },
         ],
-      };
+      }
     }
 
-    const formattedResults = results.map((result) => {
-      const similarityText = result.similarity 
-        ? ` (similarity: ${(result.similarity * 100).toFixed(1)}%)`
-        : '';
-      
-      return `**${result.memory.namespace}${similarityText}**
+    const formattedResults = results
+      .map((result) => {
+        const similarityText = result.similarity
+          ? ` (similarity: ${(result.similarity * 100).toFixed(1)}%)`
+          : ''
+
+        return `**${result.memory.namespace}${similarityText}**
 ID: ${result.memory.id}
 Content: ${result.memory.content}
 Labels: ${result.memory.labels.join(', ')}
-Created: ${formatDate(result.memory.createdAt)}`;
-    }).join('\n\n---\n\n');
+Created: ${formatDate(result.memory.createdAt)}`
+      })
+      .join('\n\n---\n\n')
 
     return {
       content: [
@@ -449,18 +464,20 @@ Created: ${formatDate(result.memory.createdAt)}`;
           text: `Found ${results.length} memories:\n\n${formattedResults}`,
         },
       ],
-    };
+    }
   }
 
   private async handleListMemories(args: unknown) {
-    const { namespace } = z.object({
-      namespace: z.string().optional(),
-    }).parse(args);
+    const { namespace } = z
+      .object({
+        namespace: z.string().optional(),
+      })
+      .parse(args)
 
-    const memories = await this.memoryStorage.listMemories(this.currentUserId!, namespace);
+    const memories = await this.memoryStorage.listMemories(this.currentUserId!, namespace)
 
     if (memories.length === 0) {
-      const namespaceText = namespace ? ` in namespace "${namespace}"` : '';
+      const namespaceText = namespace ? ` in namespace "${namespace}"` : ''
       return {
         content: [
           {
@@ -468,18 +485,21 @@ Created: ${formatDate(result.memory.createdAt)}`;
             text: `No memories found${namespaceText}.`,
           },
         ],
-      };
+      }
     }
 
-    const formattedMemories = memories.map((memory) => 
-      `**${memory.namespace}**
+    const formattedMemories = memories
+      .map(
+        (memory) =>
+          `**${memory.namespace}**
 ID: ${memory.id}
 Content: ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}
 Labels: ${memory.labels.join(', ')}
-Created: ${formatDate(memory.createdAt)}`
-    ).join('\n\n---\n\n');
+Created: ${formatDate(memory.createdAt)}`,
+      )
+      .join('\n\n---\n\n')
 
-    const namespaceText = namespace ? ` in namespace "${namespace}"` : '';
+    const namespaceText = namespace ? ` in namespace "${namespace}"` : ''
     return {
       content: [
         {
@@ -487,15 +507,17 @@ Created: ${formatDate(memory.createdAt)}`
           text: `Found ${memories.length} memories${namespaceText}:\n\n${formattedMemories}`,
         },
       ],
-    };
+    }
   }
 
   private async handleDeleteMemory(args: unknown) {
-    const { memory_id } = z.object({
-      memory_id: z.string(),
-    }).parse(args);
+    const { memory_id } = z
+      .object({
+        memory_id: z.string(),
+      })
+      .parse(args)
 
-    await this.memoryStorage.deleteMemory(this.currentUserId!, memory_id);
+    await this.memoryStorage.deleteMemory(this.currentUserId!, memory_id)
 
     return {
       content: [
@@ -504,33 +526,37 @@ Created: ${formatDate(memory.createdAt)}`
           text: `Memory with ID ${memory_id} has been deleted successfully.`,
         },
       ],
-    };
+    }
   }
 
   private async handleCreateNamespace(args: unknown) {
-    const validatedArgs = z.object({
-      name: z.string().min(1).max(100),
-      description: z.string().max(500).optional(),
-    }).parse(args);
+    const validatedArgs = z
+      .object({
+        name: z.string().min(1).max(100),
+        description: z.string().max(500).optional(),
+      })
+      .parse(args)
 
     const namespace = await this.memoryStorage.createNamespace({
       userId: this.currentUserId!,
       name: validatedArgs.name,
       ...(validatedArgs.description && { description: validatedArgs.description }),
-    });
+    })
 
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Namespace "${namespace.name}" created successfully!\n\nID: ${namespace.id}\nDescription: ${namespace.description || 'None'}\nCreated: ${formatDate(namespace.createdAt)}`,
+          text: `Namespace "${namespace.name}" created successfully!\n\nID: ${namespace.id}\nDescription: ${
+            namespace.description || 'None'
+          }\nCreated: ${formatDate(namespace.createdAt)}`,
         },
       ],
-    };
+    }
   }
 
   private async handleListNamespaces() {
-    const namespaces = await this.memoryStorage.listNamespaces();
+    const namespaces = await this.memoryStorage.listNamespaces()
 
     if (namespaces.length === 0) {
       return {
@@ -540,15 +566,18 @@ Created: ${formatDate(memory.createdAt)}`
             text: 'No namespaces found.',
           },
         ],
-      };
+      }
     }
 
-    const formattedNamespaces = namespaces.map((namespace) =>
-      `**${namespace.name}**
+    const formattedNamespaces = namespaces
+      .map(
+        (namespace) =>
+          `**${namespace.name}**
 ID: ${namespace.id}
 Description: ${namespace.description || 'None'}
-Created: ${formatDate(namespace.createdAt)}`
-    ).join('\n\n---\n\n');
+Created: ${formatDate(namespace.createdAt)}`,
+      )
+      .join('\n\n---\n\n')
 
     return {
       content: [
@@ -557,14 +586,14 @@ Created: ${formatDate(namespace.createdAt)}`
           text: `Found ${namespaces.length} namespaces:\n\n${formattedNamespaces}`,
         },
       ],
-    };
+    }
   }
 
   /**
    * Get the MCP server instance (for stdio transport if needed)
    */
   getServer(): Server {
-    return this.server;
+    return this.server
   }
 
   /**
@@ -578,12 +607,12 @@ Created: ${formatDate(namespace.createdAt)}`
         code: this.getErrorCode('error'),
         message,
       },
-    };
+    }
 
     return new Response(JSON.stringify(errorResponse), {
       status,
       headers: { 'Content-Type': 'application/json' },
-    });
+    })
   }
 
   /**
@@ -591,14 +620,14 @@ Created: ${formatDate(namespace.createdAt)}`
    */
   private getErrorCode(method: string): number {
     const errorCodes: Record<string, number> = {
-      'invalid_request': -32600,
-      'method_not_found': -32601,
-      'invalid_params': -32602,
-      'internal_error': -32603,
-      'unauthorized': -32000,
-      'tool_error': -32001,
-    };
+      invalid_request: -32600,
+      method_not_found: -32601,
+      invalid_params: -32602,
+      internal_error: -32603,
+      unauthorized: -32000,
+      tool_error: -32001,
+    }
 
-    return errorCodes[method] || -32603;
+    return errorCodes[method] || -32603
   }
 }

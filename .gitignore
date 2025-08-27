@@ -7,6 +7,7 @@ pnpm-debug.log*
 
 # Build outputs
 dist/
+src/web-ui/.vercel/
 build/
 .next/
 out/
