@@ -2,11 +2,16 @@ import { auth } from '@/auth'
 import { SignIn } from '@/components/auth/SignInButton'
 import { redirect } from 'next/navigation'
 
-export default async function LoginPage() {
+interface LoginPageProps {
+  searchParams: Promise<{ callbackUrl?: string }>
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await auth()
+  const { callbackUrl } = await searchParams
   
   if (session) {
-    redirect('/')
+    redirect(callbackUrl || '/')
   }
 
   return (
@@ -21,7 +26,7 @@ export default async function LoginPage() {
           </p>
         </div>
         <div className="mt-8 space-y-6">
-          <SignIn />
+          <SignIn callbackUrl={callbackUrl} />
         </div>
       </div>
     </div>

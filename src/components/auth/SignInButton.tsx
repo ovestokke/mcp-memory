@@ -1,12 +1,13 @@
-import { signIn } from '@/auth'
+import { signInWithGoogle } from '@/lib/auth-actions'
 
-export function SignIn() {
+interface SignInProps {
+  callbackUrl?: string
+}
+
+export function SignIn({ callbackUrl }: SignInProps) {
   return (
     <form
-      action={async () => {
-        'use server'
-        await signIn('google')
-      }}
+      action={signInWithGoogle.bind(null, callbackUrl)}
     >
       <button
         type="submit"
