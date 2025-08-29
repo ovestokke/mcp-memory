@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server'
 export async function GET() {
   return NextResponse.json({
     issuer: env.NEXTAUTH_URL,
-    authorization_endpoint: `${env.NEXTAUTH_URL}/api/authorize`,
-    token_endpoint: `${env.NEXTAUTH_URL}/api/token`,
+    authorization_endpoint: `${env.NEXTAUTH_URL}/api/oauth/authorize`,
+    token_endpoint: `${env.NEXTAUTH_URL}/api/oauth/token`,
     registration_endpoint: `${env.NEXTAUTH_URL}/api/oauth/register`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code'],

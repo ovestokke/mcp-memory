@@ -27,7 +27,6 @@ export async function verify(
     })
     return { success: true, payload }
   } catch (e) {
-    console.log(`[${new Date().toISOString()}] JWT verification failed:`, e.message)
     return { success: false, error: e as jose.errors.JOSEError }
   }
 }

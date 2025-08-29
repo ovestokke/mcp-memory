@@ -21,25 +21,6 @@ export async function GET(req: NextRequest) {
       headers: response.headers,
     },
   )
-
-  // return NextResponse.json({
-  //   resource: `${env.NEXTAUTH_URL}/api/mcp`,
-  //   authorization_servers: [env.NEXTAUTH_URL],
-  //   // scopes_supported: [],
-  //   bearer_methods_supported: ['header'],
-  //   resource_documentation: env.NEXTAUTH_URL,
-  // })
 }
-
-// export async function OPTIONS() {
-//   return new NextResponse(null, {
-//     status: 200,
-//     headers: {
-//       'Access-Control-Allow-Origin': '*',
-//       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-//       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-//     },
-//   })
-// }
 
 export { metadataCorsOptionsRequestHandler as OPTIONS }
