@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest } from 'next/server'
 import { env } from '@/env'
 import z from 'zod'
+import { metadataCorsOptionsRequestHandler } from 'mcp-handler'
 
 const Params = z.object({
   client_id: z.string().min(1),
@@ -14,7 +15,7 @@ const Params = z.object({
   resource: z.string().url().optional(),
 })
 
-async function authorize(req: NextRequest) {
+async function authorizeHandler(req: NextRequest) {
   const {
     data: authParams,
     success,
@@ -58,4 +59,4 @@ async function authorize(req: NextRequest) {
   return Response.redirect(redirectUrl)
 }
 
-export { authorize as GET, authorize as POST }
+export { authorizeHandler as GET, authorizeHandler as POST }

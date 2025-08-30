@@ -1,3 +1,4 @@
+import { metadataCorsOptionsRequestHandler } from 'mcp-handler'
 import { NextRequest } from 'next/server'
 import z from 'zod'
 
@@ -8,7 +9,7 @@ const ClientRegistrationRequest = z.object({
   // Add other optional fields as needed
 })
 
-export async function POST(req: NextRequest) {
+export async function registerHandler(req: NextRequest) {
   const { data: params, success, error } = ClientRegistrationRequest.safeParse(await req.json())
   if (!success) {
     return Response.json(
@@ -31,3 +32,5 @@ export async function POST(req: NextRequest) {
     response_types: ['code'],
   })
 }
+
+export { registerHandler as POST }
