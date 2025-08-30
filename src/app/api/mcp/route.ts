@@ -2,7 +2,6 @@ import { env } from '@/env'
 import * as jwt from '@/lib/jwt'
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
-import { RSPACK_DEFAULT_LAYERS_REGEX } from 'next/dist/build/utils'
 import { z } from 'zod'
 
 const handler = createMcpHandler(

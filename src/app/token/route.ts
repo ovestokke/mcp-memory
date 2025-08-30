@@ -46,7 +46,7 @@ async function tokenHandler(req: NextRequest) {
       token_type: 'Bearer',
       expires_in: 24 * 3600, // Number of seconds (OAuth spec requires number)
     })
-  } catch (error) {
+  } catch {
     return Response.json(
       {
         error: 'server_error',

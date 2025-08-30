@@ -3,7 +3,6 @@ import { auth } from '@/auth'
 import { NextRequest } from 'next/server'
 import { env } from '@/env'
 import z from 'zod'
-import { metadataCorsOptionsRequestHandler } from 'mcp-handler'
 
 const Params = z.object({
   client_id: z.string().min(1),

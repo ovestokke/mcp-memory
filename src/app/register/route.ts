@@ -1,4 +1,3 @@
-import { metadataCorsOptionsRequestHandler } from 'mcp-handler'
 import { NextRequest } from 'next/server'
 import z from 'zod'
 
