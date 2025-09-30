@@ -54,12 +54,12 @@ const handler = createMcpHandler(
     },
   },
   {
-    // streamableHttpEndpoint: '/mcp',
+    streamableHttpEndpoint: '/mcp',
     verboseLogs: true,
     onEvent: (event) => {
       console.log('MCP Event:', event)
     },
-    disableSse: true,
+    disableSse: false,
     basePath: '/api',
   },
 )
