@@ -15,6 +15,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Skip environment validation during build
+ENV SKIP_ENV_VALIDATION=1
+
 # Build the application with Turbopack
 RUN npm run build
 

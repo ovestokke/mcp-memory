@@ -4,7 +4,10 @@
       "WebSearch",
       "mcp__context7__resolve-library-id",
       "Bash(npm install)",
-      "Bash(npm run type-check:*)"
+      "Bash(npm run type-check:*)",
+      "Bash(curl http://localhost:3000/api/mcp-public -X POST -H \"Content-Type: application/json\" -d '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"method\"\":\"\"tools/list\"\",\"\"id\"\":1}')",
+      "Bash(docker exec:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

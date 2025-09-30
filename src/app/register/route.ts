@@ -21,12 +21,14 @@ export async function registerHandler(req: NextRequest) {
   }
 
   const clientId = `mcp-client-${Date.now()}-${crypto.randomUUID().replaceAll('-', '')}`
+  const clientSecret = `mcp-secret-${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll('-', '')
 
   return Response.json({
     client_id: clientId,
+    client_secret: clientSecret,
     client_id_issued_at: Math.floor(Date.now() / 1000),
     redirect_uris: params.redirect_uris,
-    token_endpoint_auth_method: 'none', // PKCE only, no client secret
+    token_endpoint_auth_method: 'client_secret_post', // Support client secret
     grant_types: ['authorization_code'],
     response_types: ['code'],
   })

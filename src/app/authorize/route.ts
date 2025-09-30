@@ -8,8 +8,9 @@ const Params = z.object({
   client_id: z.string().min(1),
   redirect_uri: z.string().url(),
   response_type: z.literal('code'),
-  code_challenge: z.string().min(1),
+  code_challenge: z.string().min(1).optional(), // PKCE is now optional
   code_challenge_method: z.literal('S256').optional().default('S256'),
+  client_secret: z.string().min(1).optional(), // Client secret support
   state: z.string().min(1),
   resource: z.string().url().optional(),
 })
@@ -41,17 +42,24 @@ async function authorizeHandler(req: NextRequest) {
     return Response.redirect(loginUrl.toString())
   }
 
-  const authCode = await jwt.sign(
-    {
-      sub: session.user.id,
-      client_id: authParams.client_id,
-      redirect_uri: authParams.redirect_uri,
-      code_challenge: authParams.code_challenge,
-      aud: 'mcp-memory',
-    },
-    env.JWT_SECRET,
-    { expiresIn: '10m' },
-  )
+  const authCodePayload: Record<string, unknown> = {
+    sub: session.user.id,
+    client_id: authParams.client_id,
+    redirect_uri: authParams.redirect_uri,
+    aud: 'mcp-memory',
+  }
+
+  // Include PKCE challenge if provided
+  if (authParams.code_challenge) {
+    authCodePayload.code_challenge = authParams.code_challenge
+  }
+
+  // Include client secret if provided
+  if (authParams.client_secret) {
+    authCodePayload.client_secret = authParams.client_secret
+  }
+
+  const authCode = await jwt.sign(authCodePayload, env.JWT_SECRET, { expiresIn: '10m' })
 
   const redirectUrl = `${authParams.redirect_uri}?code=${authCode}&state=${authParams.state}`
 

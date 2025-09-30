@@ -7,6 +7,10 @@ This guide walks you through creating Google OAuth credentials for the MCP Memor
 - A Google account
 - Access to [Google Cloud Console](https://console.cloud.google.com/)
 
+## For Personal Use Only
+
+This guide configures the app for **your use only**. The app will remain in "Testing" mode with only your email address allowed. No one else can sign in - perfect for personal MCP memory!
+
 ## Step-by-Step Instructions
 
 ### 1. Create a Google Cloud Project
@@ -18,60 +22,85 @@ This guide walks you through creating Google OAuth credentials for the MCP Memor
 5. Click **"Create"**
 6. Wait for the project to be created and select it
 
-### 2. Enable Google+ API (Optional but Recommended)
+### 2. Configure OAuth Consent Screen
 
-1. In the left sidebar, go to **"APIs & Services"** → **"Library"**
-2. Search for **"Google+ API"** or **"People API"**
-3. Click on **"Google+ API"** or **"People API"**
-4. Click **"Enable"**
+#### Initial Setup
 
-> **Note**: NextAuth.js uses this API to fetch user profile information.
+1. In the left sidebar, go to **"APIs & Services"** → **"OAuth consent screen"** (or **"Credentials"**)
+2. If prompted, select **"External"** user type (unless you have a Google Workspace account)
+3. Click **"Create"** or **"Configure Consent Screen"**
 
-### 3. Configure OAuth Consent Screen
+You'll see a new interface with sidebar navigation: **Overview**, **Branding**, **Audience**, **Clients**, **Data access**, **Verification centre**
 
-1. In the left sidebar, go to **"APIs & Services"** → **"OAuth consent screen"**
-2. Select **"External"** (unless you have a Google Workspace account)
-3. Click **"Create"**
+#### Step 1: Branding
 
-#### Fill in the required information:
+1. Click **"Branding"** in the left sidebar
 
-**App Information**
+Fill in the required information:
+
+**App information**
 - **App name**: `MCP Memory` (or your preferred name)
-- **User support email**: Your email address
-- **App logo**: (Optional) Upload a logo if you have one
+- **User support email**: Your email address (dropdown)
 
-**App Domain** (Optional for testing)
-- **Application home page**: `http://localhost:3000`
-- **Application privacy policy link**: (Optional)
-- **Application terms of service link**: (Optional)
+**App logo** (Optional)
+- Upload a logo if you have one (optional for testing)
 
-**Developer Contact Information**
+**App domain**
+- **Application home page**: `https://mcp-memory.vstokke.com` (or leave blank for localhost testing)
+- **Application privacy policy link**: (Leave blank for personal use)
+- **Application Terms of Service link**: (Leave blank for personal use)
+
+**Authorised domains** (Optional for localhost)
+- Add your domain if you have one: e.g., `vstokke.com`
+
+**Developer contact information**
 - **Email addresses**: Your email address
 
-4. Click **"Save and Continue"**
+2. Click **"Save"** at the bottom
 
-#### Scopes
+#### Step 2: Audience (Test Users)
 
-5. On the "Scopes" page, click **"Add or Remove Scopes"**
-6. Select the following scopes:
-   - `userinfo.email` - See your email address
-   - `userinfo.profile` - See your personal info
-   - `openid` - Authenticate using OpenID Connect
-7. Click **"Update"** then **"Save and Continue"**
+1. Click **"Audience"** in the left sidebar
 
-#### Test Users (for External Apps)
+**Publishing status**: Should show **"Testing"** (keep it this way!)
 
-8. Click **"Add Users"**
-9. Add your email address and any other test users
-10. Click **"Add"** then **"Save and Continue"**
-11. Click **"Back to Dashboard"**
+**User type**: **External**
 
-> **Important**: While in "Testing" mode, only added test users can sign in. To allow anyone to sign in, you'll need to publish the app (see section below).
+**Test users**:
+1. Click **"+ Add users"**
+2. Add **only your email address** (e.g., `ovstokke@gmail.com`)
+3. Click **"Add"**
 
-### 4. Create OAuth 2.0 Credentials
+> **✅ Personal Use**: By keeping the app in "Testing" mode and only adding your email, the app remains **private and only accessible to you**. No one else can sign in. Don't publish the app!
 
-1. In the left sidebar, go to **"APIs & Services"** → **"Credentials"**
-2. Click **"Create Credentials"** → **"OAuth client ID"**
+**OAuth user cap**: Shows "1 user (1 test, 0 other) / 100 user cap"
+
+#### Step 3: Data Access (Scopes)
+
+1. Click **"Data access"** in the left sidebar
+2. Scroll to **"Scopes for Google APIs"** section
+3. Click **"Add or Remove Scopes"** button
+4. Select the following scopes (they should already be included by default):
+   - `openid` - Associate you with your personal info on Google
+   - `userinfo.email` - See your primary Google Account email address
+   - `userinfo.profile` - See your personal info, including any personal info you've made publicly available
+5. Click **"Update"**
+6. Click **"Save"** at the bottom
+
+> **Note**: These are non-sensitive scopes and don't require verification for personal use.
+
+### 3. Create OAuth 2.0 Credentials
+
+#### Option A: From the Clients Tab (Recommended)
+
+1. Click **"Clients"** in the left sidebar (in the OAuth consent screen)
+2. Click **"Create OAuth client"** button
+3. Select **"Web application"** as the application type
+
+#### Option B: From Credentials Page
+
+1. Go to **"APIs & Services"** → **"Credentials"** (top navigation)
+2. Click **"+ Create Credentials"** → **"OAuth client ID"**
 3. Select **"Web application"** as the application type
 
 #### Configure the OAuth Client:
@@ -92,7 +121,7 @@ This guide walks you through creating Google OAuth credentials for the MCP Memor
 
 4. Click **"Create"**
 
-### 5. Copy Your Credentials
+### 4. Copy Your Credentials
 
 A dialog will appear with your credentials:
 
@@ -101,7 +130,7 @@ A dialog will appear with your credentials:
 
 **Important**: Copy these values immediately!
 
-### 6. Add Credentials to Your .env File
+### 5. Add Credentials to Your .env File
 
 Open your `.env` file and add the credentials:
 
@@ -113,7 +142,7 @@ AUTH_GOOGLE_SECRET="GOCSPX-abcdefghijklmnop"
 
 Replace the placeholder values with your actual credentials.
 
-### 7. Generate Other Required Secrets
+### 6. Generate Other Required Secrets
 
 Generate the other required secrets for your `.env` file:
 
@@ -143,7 +172,7 @@ Write-Host "JWT_SECRET=`"$([Convert]::ToBase64String($bytes))`""
 - Go to https://generate-secret.vercel.app/32
 - Copy the generated string for each secret
 
-### 8. Complete .env File
+### 7. Complete .env File
 
 Your final `.env` file should look like this:
 
@@ -179,15 +208,22 @@ docker-compose up --build
 
 7. You should be redirected back to the application
 
-## Publishing Your App (Optional)
+## Publishing Your App (Skip This for Personal Use!)
 
-If you want to allow any Google user to sign in (not just test users):
+**For personal use, DO NOT publish the app.** Keep it in "Testing" mode with only your email address as a test user. This ensures only you can access it.
+
+<details>
+<summary>If you later want to allow other users (click to expand)</summary>
+
+If you want to allow any Google user to sign in:
 
 1. Go to **"OAuth consent screen"**
 2. Click **"Publish App"**
 3. Confirm by clicking **"Confirm"**
 
 > **Note**: Google may require verification if you request sensitive or restricted scopes. For basic profile and email scopes, verification is usually not required.
+
+</details>
 
 ## Troubleshooting
 

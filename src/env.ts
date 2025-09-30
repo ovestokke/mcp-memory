@@ -13,4 +13,6 @@ export const env = createEnv({
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     JWT_SECRET: process.env.JWT_SECRET,
   },
+  // Skip validation during build
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION || process.env.NODE_ENV === 'test',
 })
